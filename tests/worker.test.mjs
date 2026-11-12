@@ -76,7 +76,7 @@ test('real PostgreSQL worker processes preserve reminders during blocked generat
  const urlFor=(role,database=name)=>{const url=new URL(adminUrl);url.username=role;url.password='';url.pathname=`/${database}`;return url.toString();};
  let db,queue,ownerPool,server,blocked=true,requestCount=0,concurrentRequests=0,maximumConcurrent=0;const prompts=[];
  const heldResponses=new Set();
- const respond=res=>{if(res.destroyed)return;res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({message:{content:JSON.stringify({answer:'Synthetic test response; no personal source data.'})}}));};
+ const respond=res=>{if(res.destroyed)return;res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({done:true,done_reason:'stop',message:{role:'assistant',content:JSON.stringify({answer:'Synthetic test response; no personal source data.'})}}));};
  const stop=async(child,signal='SIGTERM')=>{if(child.exitCode!==null||child.signalCode!==null)return;const ended=once(child,'exit');child.kill(signal);await Promise.race([ended,delay(7000,undefined,{ref:false}).then(()=>child.kill('SIGKILL'))]);};
  try {
   await admin.query('BEGIN');await admin.query('SELECT pg_advisory_xact_lock(118327,99)');

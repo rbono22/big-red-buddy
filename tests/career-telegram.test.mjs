@@ -25,6 +25,16 @@ async function setup(t){
 }
 const pdf={file_id:'telegram-fixture-file',file_size:1024,mime_type:'application/pdf',file_name:'resume.pdf'};
 
+test('job link uses the owned job application URL without a resume or submission',async t=>{
+ const s=await setup(t);await s.a.delete('documents','resume');
+ await s.a.put('jobs','job-a',{id:'job-a',title:'Analyst',company:'Example',url:'https://example.com/job',applyUrl:'https://job-boards.greenhouse.io/example/jobs/123?gh_src=test'});
+ await s.send('/job job-a',1);
+ const jobs=await s.jobs();assert.equal(jobs.length,1);assert.equal(jobs[0].type,'telegram-send');
+ const message=(await s.payload(jobs[0])).text;assert.match(message,/https:\/\/job-boards.greenhouse.io\/example\/jobs\/123\?gh_src=test/);assert.match(message,/does not submit/);
+ await assert.rejects(s.send('/job job-b',2),/workspace/);
+ assert.equal((await s.a.all('applicationTracker')).length,0);
+});
+
 test('career commands require the linked private chat and preserve existing /resume and ordinary attachments',async t=>{
   const s=await setup(t);
   assert.equal(await s.send('/resume'),false);
