@@ -1,5 +1,7 @@
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';
 import {readDailyBriefingSettings,saveDailyBriefingSettings,buildDailyBriefing} from './lib/daily-briefing.mjs';
+import {getDailyEmailStatus,disconnectDailyEmail,scheduleDailyEmailPreview} from './lib/daily-email.mjs';
+import {renderDailyEmail} from './lib/daily-email-template.mjs';
 import {listCampusCalendars,selectCampusCalendar,addCampusEvent,saveCampusSettings} from './lib/campus-calendar.mjs';
 import {listPartifulCalendars,selectPartifulCalendar,addPartifulEvent,savePartifulSettings,savePartifulIntent,disconnectPartifulCalendar} from './lib/partiful-calendar.mjs';
 import {listLumaCalendars,selectLumaCalendar,addLumaEvent,saveLumaSettings,saveLumaIntent,disconnectLumaCalendar} from './lib/luma-calendar.mjs';
@@ -168,6 +170,7 @@ async function state(store) {
     profile: await store.get('settings', 'profile'),
     reminderSettings: await readReminderSettings(store),
     dailyBriefing: await readDailyBriefingSettings(store),
+    dailyEmail: await getDailyEmailStatus(store),
     campusEvents: await store.all('campusEvents'),
     campusCalendar: await store.get('settings','campusCalendar'),
     campusConnected: !!(await store.get('secrets','campusGoogle'))?.refresh_token,
@@ -463,6 +466,12 @@ async function route(req, res) {
   if(p==='/api/news/labels'&&req.method==='GET')return json(res,200,await listNewsLabels(store));
   if(p==='/api/academic'&&req.method==='GET')return json(res,200,await listAcademicCalendar(store));
   if(p==='/api/daily-briefing/preview'&&req.method==='GET')return json(res,200,await buildDailyBriefing(store));
+  if(p==='/api/daily-email/preview'&&req.method==='GET'){
+    const briefing=await buildDailyBriefing(store),email=renderDailyEmail(briefing,{name:user.name,appOrigin:config.origin});
+    res.setHeader('Content-Security-Policy',"default-src 'none'; style-src 'unsafe-inline'; img-src 'none'; script-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; sandbox allow-popups allow-popups-to-escape-sandbox");
+    res.setHeader('Content-Type','text/html; charset=utf-8');
+    return res.end(email.html);
+  }
   if (req.method !== 'POST') throw new HttpError(404, 'Endpoint not found.');
   if(p==='/api/career/demographics'){
     const input=await body(req);
@@ -728,7 +737,18 @@ async function route(req, res) {
     retrySafe: false,
     maxAttempts: 1
   }));
-  if(p==='/api/daily-briefing/settings')return json(res,200,await saveDailyBriefingSettings(store,await body(req)));
+  if(p==='/api/daily-briefing/settings'){
+    const patch=await body(req);
+    if(patch?.emailEnabled===true&&!(await getDailyEmailStatus(store)).connected)throw new HttpError(409,'Connect Gmail delivery before enabling the daily email.');
+    return json(res,200,await saveDailyBriefingSettings(store,patch));
+  }
+  if(p==='/api/daily-email/connect')return json(res,200,await auth.beginGoogle(req,res,{purpose:'daily-email',userSession:session,returnPath:'/#connections'}));
+  if(p==='/api/daily-email/disconnect')return json(res,200,await disconnectDailyEmail(store));
+  if(p==='/api/daily-email/send'){
+    const input=await body(req);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length)throw new HttpError(400,'Daily email is sent only to your connected Cornell account; no recipient or content overrides are supported.');
+    const result=await scheduleDailyEmailPreview(store,queue);
+    return json(res,202,result);
+  }
   if(p==='/api/daily-briefing/send')return json(res,202,await task(user,'telegram-daily-preview',{}, {retrySafe:false,maxAttempts:1}));
   if(p==='/api/campus/connect')return json(res,200,await auth.beginGoogle(req,res,{purpose:'campus-calendar',userSession:session,returnPath:'/#events'}));
   if(['/api/partiful/telegram','/api/luma/telegram'].includes(p)&&req.method==='POST'){

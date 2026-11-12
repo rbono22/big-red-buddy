@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { createServer } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,7 +13,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { openDatabase } from '../lib/database.mjs';
 import { createQueue } from '../lib/queue.mjs';
 
-const origin = 'http://127.0.0.1:4349';
 const announcement = 'Milestone 5 and Maker Day 3 PDF uploads are due Friday November 13. Maker Day 3: upload by 5:00 p.m. on Nov 13.';
 async function eventually(fn, timeout = 12000) {
   const until = Date.now() + timeout; let last;
@@ -27,8 +27,14 @@ async function stop(child) {
 }
 test('authenticated API isolates students and durable extraction survives worker and web restarts', { timeout: 60000 }, async () => {
   const dir = await mkdtemp(path.join(tmpdir(), 'dabas-tenant-api-test-')), encryptionKey = randomBytes(32).toString('hex');
+  // Give this fixture its own port; an older test process must never satisfy
+  // readiness while its API writes target another fixture's database.
+  const reservation=createServer();
+  await new Promise((resolve,reject)=>reservation.once('error',reject).listen(0,'127.0.0.1',resolve));
+  const port=reservation.address().port,origin=`http://127.0.0.1:${port}`;
+  await new Promise((resolve,reject)=>reservation.close(error=>error?reject(error):resolve()));
   // Never inherit personal provider credentials or database URLs into the fixture processes.
-  const env = { PATH: process.env.PATH, LANG: 'en_US.UTF-8', NODE_ENV: 'test', HOST: '127.0.0.1', PORT: '4349', APP_ORIGIN: origin, ASSISTANT_DATA: dir, DATA_ENCRYPTION_KEY: encryptionKey, SESSION_SECRET: randomBytes(32).toString('base64'), DEV_AUTH_EMAILS: 'student1@cornell.edu,student2@cornell.edu', OLLAMA_URL: 'http://127.0.0.1:1', WORKER_HEARTBEAT_PATH: path.join(dir, 'worker-heartbeat'), WORKER_ROLE: 'model', WORKER_CONCURRENCY: '1' };
+  const env = { PATH: process.env.PATH, LANG: 'en_US.UTF-8', NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(port), APP_ORIGIN: origin, ASSISTANT_DATA: dir, DATA_ENCRYPTION_KEY: encryptionKey, SESSION_SECRET: randomBytes(32).toString('base64'), DEV_AUTH_EMAILS: 'student1@cornell.edu,student2@cornell.edu', OLLAMA_URL: 'http://127.0.0.1:1', WORKER_HEARTBEAT_PATH: path.join(dir, 'worker-heartbeat'), WORKER_ROLE: 'model', WORKER_CONCURRENCY: '1' };
   let web, worker, database, queue;
   const children = [];
   function launch(script) {
@@ -37,7 +43,11 @@ test('authenticated API isolates students and durable extraction survives worker
   }
   async function startWeb() {
     web = launch('server.mjs');
-    try { await eventually(async () => (await fetch(`${origin}/healthz`)).ok); }
+    try { await eventually(async () => {
+      if(web.exitCode!==null||web.signalCode!==null)throw new Error('Fixture web process exited before readiness.');
+      if(!web.output.includes(`Big Red Buddy web ready: ${origin}`))return false;
+      return (await fetch(`${origin}/healthz`)).ok;
+    }); }
     catch { throw new Error(`Test server failed to start: ${web.output}`); }
   }
   async function login(email) {
@@ -83,7 +93,7 @@ test('authenticated API isolates students and durable extraction survives worker
     assert.equal((await api(bob,'/api/state')).body.campusCalendar,null);
     assert.equal((await api(bob,'/api/campus/add',{id:campusItem.id})).status,404);
     assert.equal((await api(bob,'/api/state')).body.campusEvents.length,0);
-    const campusAdded=await api(alice,'/api/campus/add',{id:campusItem.id});assert.equal(campusAdded.status,200);
+    const campusAdded=await api(alice,'/api/campus/add',{id:campusItem.id});assert.equal(campusAdded.status,200);assert.equal(campusAdded.body.imported,1);assert.equal(campusAdded.body.eventIds.length,1);
     assert.ok((await aStore.all('events')).some(e=>e.kind==='event'&&e.sourceUrl==='https://cornelltech.campusgroups.com/rsvp?id=2133121'));
     assert.equal((await api(alice,'/api/daily-briefing/preview')).status,200);
     const partifulId='f'.repeat(32);
