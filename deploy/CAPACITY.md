@@ -1,8 +1,23 @@
 # Capacity and unit economics
 
-No supported student count or production delivery rate has been established. The hosting hardware and budget are not selected. The planned 4-vCPU/8-GB app VM, one model worker, and one reminder worker are starting allocations to test, not a scalability claim.
+No supported student count or production delivery rate has been established. The current pilot runs on the operator’s Mac with separate model, reminder, and discovery workers. An always-on hosting allocation and budget still need a representative workload trial; a planned 4-vCPU/8-GB app VM is a starting allocation to test, not a scalability claim.
 
 A local 10-second, five-lane `/healthz` measurement is saved in `output/http-capacity.json`. It ran on the local Node/PostgreSQL app before the separate SCRAM cluster migration. This narrow loopback read measurement does not include sign-in, document processing, model inference, or notification delivery; it cannot establish hosted capacity. Repeat representative workload measurements on the selected pilot hardware.
+
+## Local observations · November 12, 2026
+
+Synthetic PDF fixtures were parsed three times before and three times after the change on the pilot Mac. These are median **local text extraction** times; they exclude upload, queueing, AI date extraction, student review, and calendar sync.
+
+| Synthetic fixture | Before | After | Observed reduction |
+| --- | ---: | ---: | ---: |
+| Six searchable pages with small illustrations | 91 ms | 46 ms | 49% |
+| Four scanned pages | 1,237 ms | 661 ms | 47% |
+
+Extracted character and deadline-mention counts were unchanged for these fixtures. The parser now inspects images once per PDF and uses at most two single-threaded Tesseract page jobs; Apple Vision stays sequential. This small test does not establish accuracy or speed for arbitrary documents. Local evidence: `output/document-performance/baseline.json` and `improved.json` (operator artifacts, excluded from Git).
+
+A separate **two-call** synthetic short-answer trial used `qwen3.5:9b-q4_K_M`, 130 input tokens and 36 output tokens per call. The first request, with no model loaded, took **4,041 ms**, including **3,073 ms** of model loading. The immediately repeated warm request took **821 ms**, including **5 ms** of loading. Generation itself took 765/773 ms. This illustrates the observed cold-start cost; it is neither a before/after optimization comparison nor an end-to-end response-time or capacity claim. No student content was used. Local evidence: `output/performance/model-synthetic.json`.
+
+Student-scoped `/api/metrics` now includes `model.timing`: loading, prompt-processing, generation, output-token speed, and latency by task profile where the provider supplied those measurements. Use those breakdowns alongside queue delay to identify the next bottleneck; absent measurements remain absent rather than counting as zero.
 
 ## What to measure
 
