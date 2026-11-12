@@ -37,7 +37,8 @@ const emptyNewsUI=()=>({draft:{provider:'wsj10point',name:'',text:'',format:'tex
 const emptyNotificationsUI=()=>({draft:null,saving:false,error:'',notice:''});
 let newsUI=emptyNewsUI(),notificationsUI=emptyNotificationsUI();
 const defaultReminderSettings={classes:[10],events:[10],deadlines:[1440,240]};
-const names={overview:'Overview',academics:'Academics',studio:'Product Studio',events:'Events',careers:'Career studio',news:'News',connections:'Connections',evidence:'Evidence & economics'};
+// Evidence & economics is temporarily hidden; its implementation is retained below.
+const names={overview:'Overview',academics:'Academics',studio:'Product Studio',events:'Events',careers:'Career studio',news:'News',connections:'Connections'};
 const dateFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric'});
 const timeFmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour:'numeric',minute:'2-digit'});
 const fullDate=e=>Number.isFinite(Date.parse(`${e.date}T12:00:00Z`))?dateFmt.format(new Date(`${e.date}T12:00:00Z`)):'Date to confirm';
