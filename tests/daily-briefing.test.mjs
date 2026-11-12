@@ -295,3 +295,12 @@ test('the warm-introduction tip sits with each job, uses imported connections, a
  assert.doesNotMatch(result.text,/Alex|private@example\.com/);assert.equal(result.coverage.some(line=>/LinkedIn/.test(line)),false);
  assert.doesNotMatch(result.text,/Jobs posted in the past 24 hours\nNo matching roles/);assert.equal(result.counts.newJobs,0);assert.equal(result.counts.jobs,2);
 });
+
+
+test('personal calendar refresh feeds Telegram and email, deduplicates BRB classes and obeys Events topic',async t=>{
+ const {store}=await fixture(t);await saveNotificationPreferences(store,{topics:{school:'daily',events:'daily',jobs:'off',news:'off'}});
+ const lesson=event('lesson','class',{title:'Finance'});await store.put('events','lesson',lesson);
+ let reads=0;const readPersonal=async()=>{reads++;return {enabled:true,revision:2,events:[{...lesson,remoteId:'copy'},event('meeting','event',{title:'Study with Josh'}),{id:'holiday',title:'Personal holiday',allDay:true,date:'2026-11-10',endDate:'2026-11-11'}]};};
+ const result=await buildDailyBriefing(store,{now:NOW,readPersonal});assert.equal(reads,1);assert.match(result.text,/Study with Josh/);assert.match(result.text,/All day · Personal holiday/);assert.equal(result.emailSections.find(s=>s.sectionKey==='personal').total,2);assert.equal(result.personalCalendarRevision,2);
+ await saveNotificationPreferences(store,{topics:{events:'off'}});const hidden=await buildDailyBriefing(store,{now:NOW,readPersonal});assert.equal(reads,1);assert.doesNotMatch(hidden.text,/Study with Josh/);
+});

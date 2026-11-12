@@ -1,3 +1,4 @@
+import {personalCalendarStatus,savePersonalCalendars} from './lib/personal-calendar.mjs';
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';
 import {readDailyBriefingSettings,saveDailyBriefingSettings,buildDailyBriefing} from './lib/daily-briefing.mjs';
 import {getDailyEmailStatus,disconnectDailyEmail,scheduleDailyEmailPreview} from './lib/daily-email.mjs';
@@ -158,6 +159,7 @@ async function state(store) {
     eventEmail:await listEventEmailInbox(store),
     profile: await store.get('settings', 'profile'),
     reminderSettings: await readReminderSettings(store),
+    personalCalendar: await personalCalendarStatus(store),
     dailyBriefing: await readDailyBriefingSettings(store),
     dailyEmail: await getDailyEmailStatus(store),
     campusEvents: await store.all('campusEvents'),
@@ -773,6 +775,8 @@ async function route(req, res) {
     return json(res,202,result);
   }
   if(p==='/api/daily-briefing/send')return json(res,202,await task(user,'telegram-daily-preview',{}, {retrySafe:false,maxAttempts:1}));
+  if(p==='/api/personal-calendar/connect')return json(res,200,await auth.beginGoogle(req,res,{purpose:'campus-calendar',userSession:session,returnPath:'/#connections'}));
+  if(p==='/api/personal-calendar/settings'){heavyLimiter.check(user.id);return json(res,200,await savePersonalCalendars(store,await body(req)));}
   if(p==='/api/campus/connect')return json(res,200,await auth.beginGoogle(req,res,{purpose:'campus-calendar',userSession:session,returnPath:'/#events'}));
   if(['/api/partiful/telegram','/api/luma/telegram'].includes(p)&&req.method==='POST'){
     heavyLimiter.check(user.id);
@@ -970,6 +974,7 @@ async function route(req, res) {
     if (await queue.hasRunning(user.id)) throw new HttpError(409, 'Wait for your running jobs to finish before disconnecting.');
     await queue.cancelPending(user.id);
     if (b.service === 'telegram') await disconnectTelegram(database, store);else await store.delete('secrets', b.service);
+    if(b.service==='campusGoogle'){const personal=await store.get('settings','personalCalendar');if(personal)await store.put('settings','personalCalendar',{...personal,enabled:false,events:[],lastSuccess:null,lastError:null,revision:(personal.revision||0)+1});}
     if(b.service==='campusGoogle')for(const key of ['campusCalendar','partifulCalendar','lumaCalendar']){const old=await store.get('settings',key);if(old)await store.put('settings',key,{...old,continuous:false,autoAdd:false,warning:'Calendar reading disconnected; retained events are a snapshot.'});}
     await audit(store, 'connection', `${b.service} disconnected. Provider permissions may be revoked separately.`);
     return json(res, 200, {
