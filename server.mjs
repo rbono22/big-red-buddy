@@ -342,6 +342,14 @@ async function route(req, res) {
     return json(res,202,await task(user,'enrollment',{base64:b.base64,mimeType:b.mimeType,name:String(b.name||'Enrollment document').slice(0,160),term:b.term}));
   }
   if (p === '/api/enrollment/proposals' && req.method === 'GET') return json(res,200,(await store.all('enrollmentProposals')).filter(p=>p.expiresAt>Date.now()).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)));
+  if (p === '/api/enrollment/dismiss' && req.method === 'POST') {
+    const b = await body(req);
+    if (typeof b.id !== 'string' || !/^[a-f0-9]{32}$/.test(b.id)) throw new HttpError(400, 'Choose an upload to dismiss.');
+    const proposal = await store.get('enrollmentProposals', b.id);
+    if (!proposal) throw new HttpError(404, 'That upload is no longer waiting for review.');
+    if (proposal.status === 'review' && !await store.compareAndSet('enrollmentProposals', b.id, proposal, {...proposal, status: 'dismissed', dismissedAt: nowISO()})) throw new HttpError(409, 'That upload changed. Refresh and try again.');
+    return json(res, 200, {dismissed: true});
+  }
   if (p === '/api/enrollment/confirm' && req.method === 'POST') {
     heavyLimiter.check(user.id);return json(res,200,await confirmEnrollmentProposal(store,await body(req),{catalog:courseCatalog,queue}));
   }
