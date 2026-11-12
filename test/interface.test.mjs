@@ -284,7 +284,7 @@ const reminderSaveRoute = options => ({ settings: JSON.parse(options.body), cale
 test('reminder presets and custom amounts save minute offsets while showing readable durations', async () => {
   const fixture = designFixture(); fixture.reminderSettings = { classes: [15], events: [], deadlines: [2880, 120] };
   const view = await renderDesignFixture(fixture, { '/api/reminders/settings': reminderSaveRoute });
-  view.navigate('academics'); assert.match(view.document.querySelector('.notice.info').textContent, /Class reminders: 15 minutes before/); assert.match(view.document.querySelector('.notice.info').textContent, /2 days and 2 hours before/);
+  view.navigate('academics'); assert.match(view.document.querySelector('.academic-reminder-line').textContent, /Reminders: 15 minutes before classes/); assert.match(view.document.querySelector('.academic-reminder-line').textContent, /2 days and 2 hours before deadlines/);
   view.navigate('connections');
   assert.match(view.document.querySelector('#reminders-events-help').textContent, /Off/);
   assert.equal(view.document.querySelector('#reminder-events-0-preset'), null);
@@ -300,7 +300,7 @@ test('reminder presets and custom amounts save minute offsets while showing read
   const request = view.requests.find(r => r.url === '/api/reminders/settings'); assert.ok(request);
   assert.deepEqual(JSON.parse(request.options.body), { classes: [30], events: [], deadlines: [1440, 90] }); assert.equal(request.options.headers['X-CSRF-Token'], 'fixture');
   assert.match(view.document.querySelector('#reminder-settings-status').textContent, /sync is queued.*not completed yet/);
-  view.navigate('academics'); assert.match(view.document.querySelector('.notice.info').textContent, /Class reminders: 30 minutes before/);
+  view.navigate('academics'); assert.match(view.document.querySelector('.academic-reminder-line').textContent, /Reminders: 30 minutes before classes/);
 });
 
 test('custom reminder units preserve exact existing offsets and reject invalid durations before saving', async () => {
@@ -1180,4 +1180,25 @@ test('mini event calendar places overnight events on New York dates and treats m
  {...base,id:'overnight',title:'Overnight meetup',date:'2026-11-10',start:'2026-11-11T04:00:00Z',end:'2026-11-11T06:00:00Z'},
  ];const view=await renderDesignFixture(fixture);view.navigate('events');assert.equal(miniCalendarDay(view,'2026-11-10').dataset.count,'2');assert.equal(miniCalendarDay(view,'2026-11-11').dataset.count,'1');assert.equal(miniCalendarDay(view,'2026-11-12').dataset.count,'0');
  clickUI(view,'[data-action="hub-calendar-day"][data-date="2026-11-11"]');assert.match(view.document.querySelector('#event-calendar-day-list').textContent,/Overnight meetup/);assert.doesNotMatch(view.document.querySelector('#event-calendar-day-list').textContent,/Evening until midnight/);
+});
+
+test('Academics leads with what needs attention, keeps reviewed classes compact, and the badge counts only actions',async()=>{
+ const reviewed=['2026-11-11','2026-11-13','2026-11-18'].map((date,i)=>classMeeting(`done-${i}`,date,{status:'approved'}));
+ const due={id:'hw',title:'Due: Problem set 4 · NBAY 5300',kind:'assignment',date:'2026-11-12',allDay:true,endDate:'2026-11-13',status:'approved',sourceName:'Canvas · NBAY 5300'};
+ let view=await renderDesignFixture(designFixture([...reviewed,due]));view.navigate('academics');await settled();
+ const doc=view.document;assert.equal(doc.querySelector('#academic-count').hidden,true);assert.match(doc.querySelector('.academic-allclear').textContent,/all caught up/);
+ assert.match(doc.querySelector('.academic-week').textContent,/Tomorrow[\s\S]*1:25 PM[\s\S]*NBAY 5300 · Synthetic finance/);assert.match(doc.querySelector('.academic-due').textContent,/Problem set 4/);assert.doesNotMatch(doc.querySelector('.academic-due').textContent,/Due: Problem/);
+ assert.equal(doc.querySelectorAll('.class-list li').length,1);assert.match(doc.querySelector('.class-list').textContent,/3 meetings/);
+ assert.equal(doc.querySelector('#academic-review').hasAttribute('open'),false);assert.equal(doc.querySelector('#academic-setup').hasAttribute('open'),false);assert.ok(doc.querySelector('#academic-review #select-all'),'review tools stay available');
+ view=await renderDesignFixture(designFixture([...reviewed,classMeeting('new','2026-11-20')]));view.navigate('academics');await settled();
+ assert.equal(view.document.querySelector('#academic-count').textContent,'1');assert.match(view.document.querySelector('.attention-bar').textContent,/1 date to review/);assert.equal(view.document.querySelector('#academic-review').hasAttribute('open'),true);
+});
+
+test('an upload with no matching classes is one short card that can be dismissed',async()=>{
+ const empty={...enrollmentProposal,id:'a'.repeat(32),sourceName:'Syllabus INFO6410.pdf',candidates:[],warnings:['Page 2 has searchable text but no readable course identifiers.']};
+ const view=await renderDesignFixture(designFixture([classMeeting('done','2026-11-11',{status:'approved'})]),{'/api/enrollment/proposals':[empty],'/api/enrollment/dismiss':{dismissed:true}});view.navigate('academics');await settled();
+ const card=view.document.querySelector('.enrollment-empty');assert.ok(card);assert.match(card.textContent,/No enrolled classes were found/);assert.equal(card.querySelector('details').hasAttribute('open'),false);assert.match(card.querySelector('details').textContent,/no readable course identifiers/);
+ assert.equal(view.document.querySelector('#academic-setup').hasAttribute('open'),true);assert.match(view.document.querySelector('.attention-bar').textContent,/1 upload needs a look/);
+ clickUI(view,'[data-action="dismiss-enrollment"]');await settled();
+ assert.deepEqual(JSON.parse(view.requests.find(r=>r.url==='/api/enrollment/dismiss').options.body),{id:'a'.repeat(32)});assert.equal(view.document.querySelector('.enrollment-empty'),null);
 });
