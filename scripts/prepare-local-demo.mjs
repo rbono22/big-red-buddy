@@ -1,0 +1,13 @@
+import { loadSecurityConfig } from '../lib/security.mjs';
+const email=String(process.env.IMPORT_STUDENT_EMAIL||'').trim().toLowerCase();
+if(!email)throw new Error('Set IMPORT_STUDENT_EMAIL to the explicitly configured local development student.');
+const config=loadSecurityConfig();
+if(config.production||!config.devEmails.includes(email))throw new Error('This helper is restricted to the explicitly configured local development owner.');
+const response=await fetch(`${config.origin}/auth/dev`,{method:'POST',headers:{Origin:config.origin,'Content-Type':'application/json'},body:JSON.stringify({email})});
+if(!response.ok)throw new Error('Development sign-in failed. Start the configured local app first.');
+const cookie=response.headers.getSetCookie().map(s=>s.split(';')[0]).join('; ');
+await fetch(`${config.origin}/api/state`,{headers:{cookie}});
+process.env.IMPORT_STUDENT_EMAIL=email;
+await import('./import-legacy.mjs');
+const state=await(await fetch(`${config.origin}/api/state`,{headers:{cookie}})).json();
+console.log(JSON.stringify({localIdentityOnly:true,events:state.events.length,resumePresent:!!state.resume,applications:state.applications.length,remindersPaused:state.profile.paused,googleConnected:state.connections.google.connected,telegramLinked:state.connections.telegram.linked}));

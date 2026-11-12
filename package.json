@@ -1,0 +1,28 @@
+{
+  "name": "cornell-student-assistant",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Cornell Tech assistant with student identity, PostgreSQL isolation and durable workers",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning server.mjs",
+    "dev": "node --env-file-if-exists=.env --watch --disable-warning=ExperimentalWarning server.mjs",
+    "test": "node --test test/*.test.mjs tests/*.test.mjs",
+    "seed": "node --env-file-if-exists=.env scripts/import-local.mjs",
+    "n8n": "node scripts/start-n8n.mjs",
+    "worker": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning worker.mjs",
+    "migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "check:deployment": "node scripts/check-deployment.mjs",
+    "load:test": "node scripts/load-test.mjs"
+  },
+  "devDependencies": {
+    "linkedom": "^0.18.12"
+  },
+  "dependencies": {
+    "google-auth-library": "11.3.4",
+    "pg": "8.23.1"
+  }
+}

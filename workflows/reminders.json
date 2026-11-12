@@ -1,0 +1,19 @@
+{
+  "id": "dabasLocalReminderWorkflow",
+  "name": "Dabas · durable reminder dispatch",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {"rule":{"interval":[{"field":"minutes","minutesInterval":1}]}},
+      "id":"dabasSchedule","name":"Every minute","type":"n8n-nodes-base.scheduleTrigger","typeVersion":1.2,"position":[0,0]
+    },
+    {
+      "parameters": {"method":"POST","url":"http://127.0.0.1:4318/api/automation/tick","authentication":"genericCredentialType","genericAuthType":"httpHeaderAuth","options":{"timeout":30000}},
+      "id":"dabasDispatch","name":"Dispatch approved reminders","type":"n8n-nodes-base.httpRequest","typeVersion":4.2,"position":[270,0],
+      "credentials":{"httpHeaderAuth":{"id":"dabasLocalCredential","name":"Dabas local automation"}}
+    }
+  ],
+  "connections":{"Every minute":{"main":[[{"node":"Dispatch approved reminders","type":"main","index":0}]]}},
+  "settings":{"executionOrder":"v1","timezone":"America/New_York","saveDataErrorExecution":"none","saveDataSuccessExecution":"none","saveManualExecutions":false,"executionTimeout":60},
+  "pinData":{},"tags":[]
+}

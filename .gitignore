@@ -1,0 +1,34 @@
+# Installed tools and generated artifacts
+node_modules/
+.tools/
+output/
+tmp/
+coverage/
+.DS_Store
+*.log
+
+# Live student data, uploads, local runtime state, and backups
+data/
+local/
+uploads/
+backups/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.dump
+*.backup
+
+# Local configuration and credentials (templates are safe to commit)
+.env
+.env.*
+*.env
+!.env.example
+!*.env.example
+secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+.cloudflared/
+.n8n/

@@ -1,0 +1,33 @@
+{
+	admin off
+	http_port 8080
+	https_port 8443
+	email {$ACME_EMAIL}
+	log {
+		format filter {
+			wrap json
+			fields {
+				request delete
+			}
+		}
+	}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 18MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+	# Avoid access logs containing OAuth query codes or student URL identifiers.
+	# The app emits bounded, content-free operational events instead.
+	reverse_proxy web:4318 {
+		header_up -X-Forwarded-Host
+	}
+}

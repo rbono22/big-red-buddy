@@ -1,0 +1,283 @@
+name: dabas-pilot
+
+x-app: &app
+  image: dabas-assistant:${APP_VERSION:-pilot}
+  build:
+    context: .
+    args:
+      NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+  user: "1000:1000"
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=128m,mode=1777
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 128
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 45s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+x-environment: &environment
+  NODE_ENV: production
+  HOST: 0.0.0.0
+  PORT: "4318"
+  APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN in deploy/pilot.env}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID}
+  # Sign-in is Cornell-only; environment overrides cannot widen this domain.
+  ALLOWED_GOOGLE_DOMAINS: cornell.edu
+  PILOT_EMAILS: ${PILOT_EMAILS:?Set the pilot email allowlist}
+  PILOT_SHEET_ID: ${PILOT_SHEET_ID:-}
+  PILOT_SHEET_OWNER: ${PILOT_SHEET_OWNER:-}
+  PILOT_SHEET_GID: ${PILOT_SHEET_GID:-0}
+  ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+  MONTHLY_INFRA_COST_USD: ${MONTHLY_INFRA_COST_USD:-}
+  TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-dabas_class_bot}
+  SLACK_CLIENT_ID: ${SLACK_CLIENT_ID:-}
+  SLACK_ALLOWED_TEAM_IDS: ${SLACK_ALLOWED_TEAM_IDS:-}
+  OLLAMA_URL: ${OLLAMA_URL:?Set the private model host URL}
+  OLLAMA_MODEL: ${OLLAMA_MODEL:?Set the tested model name}
+  DATABASE_HOST: postgres
+  DATABASE_NAME: dabas
+  DATABASE_PASSWORD_FILE: /run/secrets/database_password
+  WORKER_HEARTBEAT_PATH: /tmp/dabas-worker-heartbeat
+
+services:
+  proxy:
+    image: dabas-caddy:${APP_VERSION:-pilot}
+    build:
+      context: .
+      dockerfile: deploy/Caddy.Dockerfile
+      args:
+        CADDY_IMAGE: ${CADDY_IMAGE:-caddy:2-alpine}
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports:
+      - "80:8080"
+      - "443:8443"
+      - "443:8443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      web:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  web:
+    <<: *app
+    command: [npm, start]
+    mem_limit: ${WEB_MEMORY:-512m}
+    cpus: ${WEB_CPUS:-1.0}
+    environment:
+      <<: *environment
+      SERVICE_ROLE: web
+      DATABASE_USER: dabas_web
+      NODE_OPTIONS: --max-old-space-size=384
+    secrets:
+      - source: database_web_password
+        target: database_password
+      - data_encryption_key
+      - session_secret
+      - google_client_secret
+      - telegram_bot_token
+      - slack_client_secret
+    networks: [edge, backend]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4318/healthz',{headers:{host:new URL(process.env.APP_ORIGIN).host},signal:AbortSignal.timeout(3000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker:
+    <<: *app
+    command: [npm, run, worker]
+    mem_limit: ${WORKER_MEMORY:-1g}
+    cpus: ${WORKER_CPUS:-1.0}
+    environment:
+      <<: *environment
+      SERVICE_ROLE: worker
+      DATABASE_USER: dabas_jobs
+      WORKER_ROLE: model
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+      NODE_OPTIONS: --max-old-space-size=768
+    secrets:
+      - source: database_worker_password
+        target: database_password
+      - data_encryption_key
+      - session_secret
+      - google_client_secret
+      - slack_client_secret
+    networks: [backend, egress]
+    healthcheck:
+      test: [CMD, node, /app/deploy/worker-health.mjs]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  reminders:
+    <<: *app
+    command: [npm, run, worker]
+    mem_limit: 512m
+    cpus: 0.5
+    environment:
+      <<: *environment
+      SERVICE_ROLE: worker
+      DATABASE_USER: dabas_jobs
+      WORKER_ROLE: reminders
+      WORKER_CONCURRENCY: "1"
+      REMINDER_CONCURRENCY: ${REMINDER_CONCURRENCY:-2}
+      NODE_OPTIONS: --max-old-space-size=384
+    secrets:
+      - source: database_worker_password
+        target: database_password
+      - data_encryption_key
+      - session_secret
+      - google_client_secret
+      - telegram_bot_token
+      - slack_client_secret
+    networks: [backend, egress]
+    healthcheck:
+      test: [CMD, node, /app/deploy/worker-health.mjs]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  discovery:
+    <<: *app
+    command: [npm, run, worker]
+    mem_limit: 512m
+    cpus: 0.5
+    environment:
+      <<: *environment
+      SERVICE_ROLE: worker
+      DATABASE_USER: dabas_jobs
+      WORKER_ROLE: discovery
+      DISCOVERY_CONCURRENCY: ${DISCOVERY_CONCURRENCY:-1}
+      NODE_OPTIONS: --max-old-space-size=384
+    secrets:
+      - source: database_worker_password
+        target: database_password
+      - data_encryption_key
+      - session_secret
+      - google_client_secret
+    networks: [backend, egress]
+    healthcheck:
+      test: [CMD, node, /app/deploy/worker-health.mjs]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-bookworm}
+    command: [postgres, -c, log_statement=none, -c, log_min_error_statement=panic]
+    user: postgres
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: ${POSTGRES_MEMORY:-1g}
+    cpus: ${POSTGRES_CPUS:-1.0}
+    shm_size: 128m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+      - /var/run/postgresql:rw,noexec,nosuid,size=16m,mode=1777
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=peer
+    secrets:
+      - postgres_admin_password
+      - database_owner_password
+      - database_web_password
+      - database_worker_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-dabas.sh:ro
+    networks: [backend]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready --username postgres --dbname postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+
+  migrate:
+    <<: *app
+    profiles: [ops]
+    restart: "no"
+    command: [node, scripts/migrate.mjs]
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      NODE_ENV: production
+      SERVICE_ROLE: migrate
+      DATABASE_HOST: postgres
+      DATABASE_NAME: dabas
+      DATABASE_USER: dabas_owner
+      DATABASE_PASSWORD_FILE: /run/secrets/database_password
+    secrets:
+      - source: database_owner_password
+        target: database_password
+    networks: [backend]
+
+networks:
+  edge: {}
+  egress: {}
+  backend:
+    internal: true
+
+volumes:
+  postgres_data: {}
+  caddy_data: {}
+  caddy_config: {}
+
+secrets:
+  postgres_admin_password:
+    file: ./deploy/secrets/postgres_admin_password
+  database_owner_password:
+    file: ./deploy/secrets/database_owner_password
+  database_web_password:
+    file: ./deploy/secrets/database_web_password
+  database_worker_password:
+    file: ./deploy/secrets/database_worker_password
+  data_encryption_key:
+    file: ./deploy/secrets/data_encryption_key
+  session_secret:
+    file: ./deploy/secrets/session_secret
+  google_client_secret:
+    file: ./deploy/secrets/google_client_secret
+  telegram_bot_token:
+    file: ./deploy/secrets/telegram_bot_token
+  slack_client_secret:
+    file: ./deploy/secrets/slack_client_secret
