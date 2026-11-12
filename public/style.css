@@ -1336,3 +1336,16 @@ details.course-freshness { padding: 0; border: 0; background: none; margin: 0 0 
 .news-subscribe-links { margin-top: 16px; }
 .event-manual { margin-bottom: 24px; }
 .economics-subhead { margin: 24px 0 12px; font-size: 15px; }
+
+/* Canvas connector */
+.canvas-panel .panel-head h2 { margin: 0; }
+.canvas-steps { margin: 0 0 16px; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+.canvas-steps a { text-decoration: underline; text-underline-offset: 3px; }
+.canvas-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: end; }
+.canvas-form .field { margin-bottom: 0; }
+.canvas-ai { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.canvas-ai h3 { margin: 0 0 4px; font-size: 16px; }
+.canvas-ai-table { width: 100%; margin-top: 12px; border-collapse: collapse; }
+.canvas-ai-table th, .canvas-ai-table td { text-align: left; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.canvas-ai-table select { min-width: 200px; }
+@media (max-width: 640px) { .canvas-form { grid-template-columns: minmax(0, 1fr); } .canvas-ai-table select { min-width: 0; width: 100%; } }

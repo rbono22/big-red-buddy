@@ -32,7 +32,8 @@ import { createQueue } from './lib/queue.mjs';
 import { createAuth } from './lib/auth.mjs';
 import { createSlackAuth } from './lib/slack-auth.mjs';
 import { loadSecurityConfig, applySecurityHeaders, enforceRequestHost, enforceRequestOrigin, RateLimiter, clientIP, safeError, HttpError } from './lib/security.mjs';
-import { TZ, idFor, normalizeEvent, calendarICS, localISO } from './lib/domain.mjs';
+import { TZ, idFor, normalizeEvent, calendarICS, localISO, calendarBounds } from './lib/domain.mjs';
+import { connectCanvasFeed, disconnectCanvasFeed, readCanvasStatus, saveCourseAIPolicy } from './lib/canvas-feed.mjs';
 import { persistCandidates } from './lib/ingest.mjs';
 import { audit, nowISO, jsonFetch, reconcileReminders } from './lib/integrations.mjs';
 import { createTelegramLink, disconnectTelegram } from './lib/telegram.mjs';
@@ -166,6 +167,7 @@ async function state(store) {
     news:await listNews(store),
     eventHub:await buildEventHub(store),
     academicCalendar:academic.settings,
+    canvas:await readCanvasStatus(store),
     eventEmail:await listEventEmailInbox(store),
     profile: await store.get('settings', 'profile'),
     reminderSettings: await readReminderSettings(store),
@@ -514,6 +516,21 @@ async function route(req, res) {
     if(typeof b.text!=='string'||b.text.trim().length<20||Buffer.byteLength(b.text)>100000||!['text','eml'].includes(b.format||'text'))throw new HttpError(400,'Paste event email text or import an .eml file, up to 100 KB.');
     return json(res,202,await task(user,'event-email-import',{text:b.text,name:String(b.name||'Imported event email').slice(0,160),format:b.format||'text'},{retrySafe:true,maxAttempts:2}));
   }
+  if(p==='/api/canvas/connect'&&req.method==='POST'){
+    heavyLimiter.check(user.id);const b=await body(req);
+    await connectCanvasFeed(store,b.url);await audit(store,'canvas','Canvas calendar feed connected.');
+    return json(res,202,{connected:true,...await task(user,'canvas-sync',{}, {retrySafe:true,maxAttempts:2})});
+  }
+  if(p==='/api/canvas/sync'&&req.method==='POST'){
+    heavyLimiter.check(user.id);if(!(await store.get('secrets','canvasFeed'))?.url)throw new HttpError(409,'Connect your Canvas calendar feed first.');
+    return json(res,202,await task(user,'canvas-sync',{}, {retrySafe:true,maxAttempts:2}));
+  }
+  if(p==='/api/canvas/disconnect'&&req.method==='POST'){
+    const result=await disconnectCanvasFeed(store);await audit(store,'canvas','Canvas calendar feed disconnected; imported items kept.');return json(res,200,result);
+  }
+  if(p==='/api/canvas/policy'&&req.method==='POST'){
+    const b=await body(req);return json(res,200,await saveCourseAIPolicy(store,{courseCode:b.courseCode,policy:b.policy},{queue}));
+  }
   if(p==='/api/academic/refresh'){
     heavyLimiter.check(user.id);return json(res,202,await task(user,'academic-refresh',{}, {retrySafe:true,maxAttempts:2}));
   }
@@ -585,7 +602,8 @@ async function route(req, res) {
       if(!Array.isArray(b.expected)||b.expected.length!==selected.length||selected.some(event=>{const expected=b.expected.filter(item=>item?.id===event.id);return expected.length!==1||keys.some(key=>expected[0][key]!== (event[key]??null));}))throw new HttpError(409,'These dates changed since you opened this view. Refresh and review the updated schedule.');
     }
     if (b.action === 'cancel' && selected.some(e=>!e.cancelled)) throw new HttpError(400,'Only source-removed items can be confirmed for calendar removal.');
-    if (b.action === 'approve' && selected.some(e => !Number.isFinite(Date.parse(e.start)) || !Number.isFinite(Date.parse(e.end)) || Date.parse(e.end)<=Date.parse(e.start) || e.evidenceVerified === false || e.cancelled)) throw new HttpError(400, 'Resolve missing start/end times and evidence before approval.');
+    const validAllDay = e => { if (!e.allDay) return false; try { calendarBounds(e); return true; } catch { return false; } };
+    if (b.action === 'approve' && selected.some(e => (!validAllDay(e) && (!Number.isFinite(Date.parse(e.start)) || !Number.isFinite(Date.parse(e.end)) || Date.parse(e.end)<=Date.parse(e.start))) || e.evidenceVerified === false || e.cancelled)) throw new HttpError(400, 'Resolve missing start/end times and evidence before approval.');
     for (const e of selected) {
       const update={
       ...e,
