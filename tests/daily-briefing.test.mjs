@@ -76,7 +76,7 @@ test('unified briefing deduplicates matching social listings and shows ongoing r
  await store.put('settings','campusCalendar',{calendarId:'campus'});await store.put('settings','lumaCalendar',{calendarId:'luma'});await store.put('settings','academicCalendar',{lastSuccess:new Date(NOW).toISOString()});
  const row=event('campus-social','event',{title:'Friends and founders',status:'available',rsvpUrl:'https://lu.ma/briefing-fixture',sourceCalendarId:'campus'});await store.put('campusEvents',row.id,row);await store.put('lumaEvents','luma-social',{...row,id:'luma-social',sourceCalendarId:'luma'});
  await store.put('academicEvents','break',{id:'break',title:'Official multiday break',category:'break',date:'2026-11-09',endDate:'2026-11-12',allDay:true,status:'available'});
- const result=await buildDailyBriefing(store,{now:NOW});assert.equal(result.counts.events,1);assert.equal((result.text.match(/Friends and founders/g)||[]).length,1);assert.match(result.text,/Official multiday break/);assert.match(result.text,/Ongoing · all day/);assert.match(result.text,/your program may differ/);
+ const result=await buildDailyBriefing(store,{now:NOW});assert.equal(result.counts.events,1);assert.equal((listings(result).match(/Friends and founders/g)||[]).length,1);assert.match(result.headline,/Next up: 1:00 PM · Friends and founders/);assert.match(result.text,/Official multiday break/);assert.match(result.text,/Ongoing · all day/);assert.match(result.text,/your program may differ/);
  const end=await buildDailyBriefing(store,{now:Date.parse('2026-11-12T13:05:00Z')});assert.doesNotMatch(end.text,/Official multiday break/);
 });
 test('approved all-day dates do not request a time and changed source copies remain in review',async t=>{
@@ -85,6 +85,7 @@ test('approved all-day dates do not request a time and changed source copies rem
  await store.put('events','copy',event('copy','event',{title:'Changed event',status:'review',campusCandidateId:'changed-source'}));
  const result=await buildDailyBriefing(store,{now:NOW});assert.equal(result.counts.awaitingReview,1);assert.match(result.text,/Added item needs calendar review/);assert.doesNotMatch(result.text,/Official holiday · time needs confirmation/);
 });
+const listings=result=>result.text.replace(result.headline,'');
 async function queuedPayload(queue){const job=await queue.claim('test-worker',{types:['daily-briefing']});assert.ok(job);return job;}
 
 test('settings default to enabled 08:00 New York, validate edits and stay tenant-owned',async t=>{
@@ -101,7 +102,7 @@ test('daily content separates approved schedule, optional campus events and revi
   await store.put('settings','campusCalendar',{calendarId:'campus',continuous:false,lastSuccess:new Date(NOW).toISOString()});
   for(const row of [{id:'added-source',title:'Added campus event',addedEventId:'added'},{id:'available',title:'Available campus event'},{id:'wrong-calendar',title:'Wrong calendar event',sourceCalendarId:'other'}])await store.put('campusEvents',row.id,{...event(row.id,'event'),status:'available',sourceCalendarId:'campus',...row});
   await store.put('documents','resume',{text:'PRIVATE_RESUME'});await store.put('career','demographics',{gender:'PRIVATE_DEMOGRAPHICS'});
-  const result=await buildDailyBriefing(store,{now:NOW});assert.deepEqual(result.counts,{classes:1,deadlines:2,events:2,jobs:0,awaitingReview:1,news:0});
+  const result=await buildDailyBriefing(store,{now:NOW});assert.deepEqual(result.counts,{classes:1,deadlines:2,upcoming:0,events:2,jobs:0,newJobs:0,awaitingReview:1,news:0});
   assert.match(result.text,/1:00 PM/);assert.match(result.text,/Location not published/);assert.match(result.text,/Available; not on your calendar/);assert.match(result.text,/Awaiting your review/);assert.match(result.text,/snapshot/);
   for(const privateText of ['DO_NOT_INCLUDE_DEADLINE_DESCRIPTION','DO_NOT_INCLUDE_DEADLINE_EVIDENCE','PRIVATE_RESUME','PRIVATE_DEMOGRAPHICS','Wrong calendar event','quiz dismissed'])assert.equal(result.text.includes(privateText),false);
   assert.equal((result.text.match(/Added campus event/g)||[]).length,1);
@@ -122,7 +123,7 @@ test('Partiful joins the daily briefing once per event, excludes local declines,
   for(const row of rows)await store.put('partifulEvents',row.id,{...event(row.id,'event'),status:'available',sourceCalendarId:'partiful',...row});
   const result=await buildDailyBriefing(store,{now:NOW});assert.equal(result.counts.events,2);
   assert.match(result.text,/Partiful gathering/);assert.match(result.text,/https:\/\/partiful.com\/e\/example/);assert.match(result.text,/24 hours/);assert.match(result.text,/RSVP on Partiful/);
-  assert.equal((result.text.match(/Already added party/g)||[]).length,1);
+  assert.equal((listings(result).match(/Already added party/g)||[]).length,1);
   for(const hidden of ['Declined party','Unselected party','PRIVATE_PARTY_DESCRIPTION'])assert.equal(result.text.includes(hidden),false);
   assert.equal((await buildDailyBriefing(db.forUser('other'),{now:NOW})).counts.events,0);
 });
@@ -144,7 +145,7 @@ test('Luma appears once in briefings, hides declined and foreign-source items, a
  await store.put('events','luma-added',event('luma-added','event',{title:'Added Luma workshop',lumaCandidateId:'added'}));
  await store.put('events','luma-declined',event('luma-declined','event',{title:'Locally declined Luma',lumaCandidateId:'declined'}));
  for(const row of [{id:'available',title:'Available Luma workshop',rsvpUrl:'https://lu.ma/example',description:'PRIVATE_LUMA_DESCRIPTION'},{id:'added',title:'Added Luma workshop',addedEventId:'luma-added'},{id:'declined',title:'Locally declined Luma',localIntent:'declined',addedEventId:'luma-declined'},{id:'wrong',title:'Wrong Luma source',sourceCalendarId:'other'},{id:'cancelled',title:'Cancelled Luma',status:'cancelled'}])await store.put('lumaEvents',row.id,{...event(row.id,'event'),status:'available',sourceCalendarId:'luma',...row});
- const result=await buildDailyBriefing(store,{now:NOW});assert.equal(result.counts.events,2);assert.equal((result.text.match(/Added Luma workshop/g)||[]).length,1);
+ const result=await buildDailyBriefing(store,{now:NOW});assert.equal(result.counts.events,2);assert.equal((listings(result).match(/Added Luma workshop/g)||[]).length,1);
  assert.match(result.text,/Available Luma workshop/);assert.match(result.text,/Available; not on your calendar/);assert.match(result.text,/https:\/\/lu\.ma\/example/);assert.match(result.text,/12–24 hours/);assert.match(result.text,/Luma registration\/ticket not verified/);assert.match(result.text,/pending or waitlisted/);
  for(const hidden of ['Locally declined Luma','Wrong Luma source','Cancelled Luma','PRIVATE_LUMA_DESCRIPTION'])assert.equal(result.text.includes(hidden),false);
  assert.equal((await buildDailyBriefing(db.forUser('another'),{now:NOW})).counts.events,0);assert.ok(result.text.length<=3800);
@@ -253,7 +254,7 @@ test('email sections exclude disabled topics and retain only the chosen review c
  const {store}=await fixture(t);await store.put('events','class',event('class','class',{title:'PRIVATE SCHOOL'}));await store.put('events','school-review',event('school-review','assignment',{title:'PRIVATE SCHOOL REVIEW',status:'review'}));await store.put('events','party',event('party','event',{title:'ALLOWED EVENT'}));await store.put('events','event-review',event('event-review','event',{title:'ALLOWED EVENT REVIEW',status:'review'}));await store.put('jobs','role',{id:'role',title:'PRIVATE JOB',publishedAt:new Date(NOW).toISOString()});
  await saveNotificationPreferences(store,{topics:{school:'off',events:'daily',jobs:'alerts',news:'off'}});
  let result=await buildDailyBriefing(store,{now:NOW});assert.deepEqual(result.emailSections.map(section=>section.sectionKey),['events','review']);assert.match(JSON.stringify(result.emailSections),/ALLOWED EVENT REVIEW/);assert.match(JSON.stringify(result.emailSections),/ALLOWED EVENT/);assert.doesNotMatch(JSON.stringify(result.emailSections),/PRIVATE SCHOOL|PRIVATE JOB/);assert.equal(result.emailJobNotification,null);
- await saveNotificationPreferences(store,{topics:{events:'off',school:'daily'}});result=await buildDailyBriefing(store,{now:NOW});assert.deepEqual(result.emailSections.map(section=>section.sectionKey),['classes','deadlines','academic','review']);assert.match(JSON.stringify(result.emailSections),/PRIVATE SCHOOL REVIEW/);assert.doesNotMatch(JSON.stringify(result.emailSections),/ALLOWED EVENT|PRIVATE JOB/);
+ await saveNotificationPreferences(store,{topics:{events:'off',school:'daily'}});result=await buildDailyBriefing(store,{now:NOW});assert.deepEqual(result.emailSections.map(section=>section.sectionKey),['classes','deadlines','upcoming','academic','review']);assert.match(JSON.stringify(result.emailSections),/PRIVATE SCHOOL REVIEW/);assert.doesNotMatch(JSON.stringify(result.emailSections),/ALLOWED EVENT|PRIVATE JOB/);
 });
 
 test('stale daily delivery settings proposals cannot overwrite another change',async t=>{
@@ -261,4 +262,36 @@ test('stale daily delivery settings proposals cannot overwrite another change',a
  await saveDailyBriefingSettings(store,{time:'09:30',telegramEnabled:false},{expectedPrevious:initial});const current=await store.get('settings','dailyBriefing');
  await assert.rejects(saveDailyBriefingSettings(store,{time:'08:00',emailEnabled:true},{expectedPrevious:initial}),{status:409});assert.deepEqual(await store.get('settings','dailyBriefing'),current);
  const saved=await saveDailyBriefingSettings(store,{emailEnabled:true},{expectedPrevious:current});assert.equal(saved.emailEnabled,true);assert.equal(saved.telegramEnabled,false);assert.equal(saved.time,'09:30');assert.equal((await store.get('settings','dailyBriefing')).revision,current.revision+1);
+});
+
+test('an empty school day collapses to one line, looks ahead a week, and leads with a plain summary',async t=>{
+ const {store}=await fixture(t);
+ await store.put('events','due-thu',event('due-thu','assignment',{title:'Finance problem set',date:'2026-11-12',start:'2026-11-12T22:00:00Z',end:'2026-11-12T22:00:00Z'}));
+ await store.put('events','due-later',event('due-later','exam',{title:'Too far away',date:'2026-11-20',start:'2026-11-20T15:00:00Z',end:'2026-11-20T17:00:00Z'}));
+ await store.put('events','unapproved',event('unapproved','quiz',{title:'Unapproved quiz',status:'review',date:'2026-11-11',start:'2026-11-11T15:00:00Z'}));
+ const result=await buildDailyBriefing(store,{now:NOW});
+ assert.match(result.text,/^Your day · 2026-11-10 · New York\nNo classes or deadlines today\. Next deadline: Finance problem set, Thu, Nov 12\./);
+ assert.match(result.text,/Today\nNo classes or deadlines on your schedule today\./);assert.doesNotMatch(result.text,/Due today\n|Nothing due today|No approved timed/);
+ assert.match(result.text,/Due in the next 7 days\nThu, Nov 12, 5:00 PM · Finance problem set/);assert.doesNotMatch(result.text,/Too far away|Unapproved quiz ·.*\n.*Due in/);
+ assert.equal(result.counts.upcoming,1);
+});
+
+test('registrar dates for other cohorts are left out while graduate dates and holidays stay',async t=>{
+ const {store}=await fixture(t);await store.put('settings','academicCalendar',{lastSuccess:new Date(NOW).toISOString()});
+ const day={date:'2026-11-10',endDate:'2026-11-11',allDay:true,status:'available'};
+ for(const [id,title] of [['grad','Spring 2027: Enrollment begins for Graduate/Professional/Cornell Tech'],['seniors','Spring 2027: Enrollment begins for Seniors and Vet Med fourth-years'],['first','Spring 2027: Enrollment begins for First-Years and Vet Med first-years'],['break','Thanksgiving Break/No classes']])await store.put('academicEvents',id,{id,title,...day});
+ const result=await buildDailyBriefing(store,{now:NOW});
+ assert.match(result.text,/Graduate\/Professional\/Cornell Tech/);assert.match(result.text,/Thanksgiving Break/);assert.doesNotMatch(result.text,/Seniors|First-Years/);
+});
+
+test('the warm-introduction tip sits with each job, uses imported connections, and never truncates in coverage',async t=>{
+ const {store}=await fixture(t);const {importLinkedInConnections}=await import('../lib/linkedin-connections.mjs');
+ await store.put('jobs','known',{id:'known',title:'Data Analyst',company:'Example Company',publishedAt:new Date(NOW-3*86400000).toISOString(),firstSeenAt:new Date(NOW-3*86400000).toISOString()});
+ await store.put('jobs','unknown',{id:'unknown',title:'Strategy Associate',company:'Other Co',publishedAt:new Date(NOW-2*86400000).toISOString(),firstSeenAt:new Date(NOW-2*86400000).toISOString()});
+ await importLinkedInConnections(store,{csv:'First Name,Last Name,URL,Email Address,Company,Position,Connected On\nAlex,Example,https://www.linkedin.com/in/alex-example,private@example.com,Example Company,Manager,01 Jan 2025\n'});
+ const result=await buildDailyBriefing(store,{now:NOW});
+ assert.match(result.text,/Data Analyst · Example Company\nPosted [^\n]+\nYou have 1 LinkedIn connection at Example Company\. Ask one for context or a warm intro\./);
+ assert.match(result.text,/Strategy Associate · Other Co\nPosted [^\n]+\nBefore applying, check your LinkedIn 1st-degree connections/);
+ assert.doesNotMatch(result.text,/Alex|private@example\.com/);assert.equal(result.coverage.some(line=>/LinkedIn/.test(line)),false);
+ assert.doesNotMatch(result.text,/Jobs posted in the past 24 hours\nNo matching roles/);assert.equal(result.counts.newJobs,0);assert.equal(result.counts.jobs,2);
 });
