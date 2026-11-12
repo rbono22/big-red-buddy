@@ -121,6 +121,6 @@ test('all-at-once website buttons allow only the configured secure demographic p
  try{
   const markup=url=>({inline_keyboard:[[{text:'Fill all at once',url}]]});
   assert.deepEqual(validateTelegramReplyMarkup(markup('https://app.synthetic.example/#demographics')),markup('https://app.synthetic.example/#demographics'));
-  for(const url of ['http://app.synthetic.example/#demographics','https://app.synthetic.example.attacker.test/#demographics','https://app.synthetic.example/#careers','https://app.synthetic.example/?token=secret#demographics','https://user:secret@app.synthetic.example/#demographics','https://app.synthetic.example:4430/#demographics'])assert.throws(()=>validateTelegramReplyMarkup(markup(url)));
+  for(const url of ['http://app.synthetic.example/#demographics','https://app.synthetic.example.attacker.test/#demographics','https://app.synthetic.example/#unknown','https://app.synthetic.example/?token=secret#demographics','https://user:secret@app.synthetic.example/#demographics','https://app.synthetic.example:4430/#demographics'])assert.throws(()=>validateTelegramReplyMarkup(markup(url)));
  }finally{if(previous===undefined)delete process.env.APP_ORIGIN;else process.env.APP_ORIGIN=previous;}
 });
