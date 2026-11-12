@@ -65,3 +65,13 @@ test('development email previews allow HTTP only on exact loopback origins',()=>
  }
  for(const appOrigin of ['http://example.com','http://127.1:4384','http://2130706433:4384','http://0x7f000001:4384','http://localhost.evil.test','http://localhost.','http://127.0.0.1.evil.test','http://[0:0:0:0:0:0:0:1]','http://user:pass@localhost:4384','https://user:pass@example.com','http://@localhost:4384','https:/example.com','https://example.com\\@localhost','https://example.com\n','not a URL'])assert.throws(()=>renderDailyEmail(fixture(),{appOrigin}),/BRB origin/,appOrigin);
 });
+
+test('the email leads with the briefing summary, links section headings, and calls week-old roles "this week"',()=>{
+ const f=fixture();f.headline='No classes or deadlines today. Next up: 9:30 AM · Bagels and Belonging.';f.counts={classes:0,deadlines:0,events:3,jobs:1,newJobs:0};
+ f.emailSections=[{sectionKey:'classes',title:'Today',items:[],empty:'No classes or deadlines on your schedule today.',total:0},{sectionKey:'upcoming',title:'Due in the next 7 days',items:['Thu, Nov 12, 5:00 PM · Finance problem set'],total:1},{sectionKey:'jobsWeek',title:'Jobs posted 1–7 days ago',items:['Data Analyst · Stripe\nPosted Nov 5'],total:1}];
+ const email=renderDailyEmail(f),{document}=parseHTML(email.html);
+ assert.match(email.text,/No classes or deadlines today\. Next up: 9:30 AM · Bagels and Belonging\./);assert.match(email.html,/Bagels and Belonging/);
+ assert.match(email.text,/1 role this week/);assert.doesNotMatch(email.text+email.html,/recent role|Your selected updates, together/);
+ assert.match(email.text,/^Today$/m);assert.doesNotMatch(email.text,/^Classes today$/m);assert.match(email.text,/Due in the next 7 days/);assert.match(email.text,/Roles from the past week/);
+ const headingLinks=[...document.querySelectorAll('h2 a')].map(anchor=>anchor.getAttribute('href'));assert.ok(headingLinks.includes('https://app.bigredbuddy.com/#academics'));assert.ok(headingLinks.includes('https://app.bigredbuddy.com/#careers'));
+});
