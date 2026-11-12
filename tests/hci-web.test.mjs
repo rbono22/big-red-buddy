@@ -151,3 +151,22 @@ for (const result of [{ suppressed: true }, { accepted: false }]) {
     assert.equal(ui.document.querySelector('#activity-status').hidden, true);
   });
 }
+
+for (const [result,expected,error] of [
+  [{sent:true,accepted:true},/Gmail accepted/,false],
+  [{sent:false,reason:'delivery-uncertain'},/delivery is unconfirmed/,true],
+  [{sent:false,reason:'gmail-reconnect-required'},/Reconnect Gmail delivery/,true],
+  [{sent:false,reason:'email-disabled'},/Email was not sent/,true],
+  [{},/delivery is unconfirmed/,true],
+]) {
+  test(`email completion accurately distinguishes acceptance, rejection and uncertainty: ${JSON.stringify(result)}`,async()=>{
+    const ui=await app({'/api/daily-email/send':{taskId:'synthetic-email'},'/api/tasks':[{id:'synthetic-email',status:'done',result}]});
+    await ui.runTask('/api/daily-email/send',{});
+    await [...ui.intervals.values()].find(timer=>timer.delay===1500).fn();
+    const message=ui.document.querySelector('#toast-message');
+    assert.match(message.textContent,expected);
+    assert.equal(message.getAttribute('role'),error?'alert':'status');
+    if(error)assert.doesNotMatch(message.textContent,/Gmail accepted/);
+    if(result.reason==='delivery-uncertain')assert.doesNotMatch(message.textContent,/not sent/);
+  });
+}
