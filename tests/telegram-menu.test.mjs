@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {menuCard,showMenu,handleMenuMessage,handleMenuCallback,parseRoutineRequest,pruneMenuActions} from '../lib/telegram-menu.mjs';
 import {validateTelegramReplyMarkup} from '../lib/telegram-delivery.mjs';
-import {CALENDAR_SCOPE} from '../lib/auth.mjs';
-function setup(){
- const rows=new Map(),sent=[],store={userId:'student',get:async(b,k)=>structuredClone(rows.get(b+':'+k)||null),put:async(b,k,v)=>rows.set(b+':'+k,structuredClone(v)),delete:async(b,k)=>rows.delete(b+':'+k),all:async b=>[...rows].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v)),compareAndSet:async(b,k,old,next)=>{if(JSON.stringify(rows.get(b+':'+k)||null)!==JSON.stringify(old))return false;rows.set(b+':'+k,structuredClone(next));return true;}};
+import {CALENDAR_SCOPE,GMAIL_SEND_SCOPE,identityId} from '../lib/auth.mjs';
+function setup(userId='student'){
+ const rows=new Map(),sent=[],store={userId,get:async(b,k)=>structuredClone(rows.get(b+':'+k)||null),put:async(b,k,v)=>rows.set(b+':'+k,structuredClone(v)),delete:async(b,k)=>rows.delete(b+':'+k),all:async b=>[...rows].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v)),compareAndSet:async(b,k,old,next)=>{if(JSON.stringify(rows.get(b+':'+k)||null)!==JSON.stringify(old))return false;rows.set(b+':'+k,structuredClone(next));return true;}};
  rows.set('secrets:telegram',{chatId:101,linkedAt:'one'});const queue={enqueue:async(user,type,payload,options)=>{const job={id:String(sent.length),user,type,payload,options};sent.push(job);return job;}};
  const button=label=>sent.at(-1).payload.replyMarkup.inline_keyboard.flat().find(b=>b.text===label);
  const click=async(label,id=200)=>handleMenuCallback(null,store,queue,{data:button(label).callback_data,message:{chat:{id:101,type:'private'}}},id);
@@ -92,4 +92,83 @@ test('uploaded documents can change purpose without uploading again and cancelle
  await tap('Cancel',4);assert.equal((await s.store.get('settings','invitationFlow')).status,'cancelled');assert.ok(s.button('Main menu'));
  assert.equal(s.sent.filter(j=>['telegram-syllabus','telegram-enrollment','telegram-invitation'].includes(j.type)).length,0);
  for(const job of s.sent.filter(j=>j.type==='telegram-send'))validateTelegramReplyMarkup(job.payload.replyMarkup);
+});
+
+async function emailSetup(){
+ process.env.APP_ORIGIN='https://app.synthetic.example';
+ const subject='synthetic-menu-google-owner',s=setup(identityId('google',subject));
+ await s.store.put('secrets','dailyEmailGoogle',{subject,email:'student@cornell.edu',connectionRevision:'synthetic-email-binding',scope:GMAIL_SEND_SCOPE,refresh_token:'SYNTHETIC_SEND_SECRET'});
+ return s;
+}
+test('daily delivery menu offers readable choices and secure Gmail consent before enabling email',async()=>{
+ process.env.APP_ORIGIN='https://app.synthetic.example';
+ for(const choice of ['Email only','Both']){
+  const s=setup();await showMenu(s.store,s.queue,'settings',1);await s.click('Daily delivery',2);
+  for(const label of ['Telegram only','Email only','Both','Pause daily briefing'])assert.ok(s.button(label));
+  assert.match(s.sent.at(-1).payload.text,/Time: 08:00 · New York/);
+  await s.click(choice,3);assert.equal(await s.store.get('settings','dailyBriefing'),null);
+  assert.equal(s.button('Connect Gmail delivery').url,'https://app.synthetic.example/#connections');
+  assert.equal(s.button('Confirm'),undefined);assert.match(s.sent.at(-1).payload.text,/Google needs your permission/);
+  assert.ok(s.sent.every(job=>job.type==='telegram-send'));
+  for(const job of s.sent)validateTelegramReplyMarkup(job.payload.replyMarkup);
+ }
+});
+test('email delivery choices preview the change and save only after the owner confirms',async()=>{
+ for(const [choice,telegramEnabled,label] of [['Email only',false,'Email only'],['Both',true,'Telegram and email']]){
+  const s=await emailSetup();await showMenu(s.store,s.queue,'delivery',1);await s.click(choice,2);
+  assert.match(s.sent.at(-1).payload.text,new RegExp(`Current: Telegram only\\nNew: ${label}`));
+  assert.equal(await s.store.get('settings','dailyBriefing'),null);
+  const confirm=s.button('Confirm').callback_data;await s.click('Confirm',3);
+  const saved=await s.store.get('settings','dailyBriefing');
+  assert.equal(saved.enabled,true);assert.equal(saved.emailEnabled,true);assert.equal(saved.telegramEnabled,telegramEnabled);assert.equal(saved.time,'08:00');
+  assert.match(s.sent.at(-1).payload.text,/Saved\. Daily briefing/);
+  await handleMenuCallback(null,s.store,s.queue,{data:confirm,message:{chat:{id:101,type:'private'}}},4);
+  assert.deepEqual(await s.store.get('settings','dailyBriefing'),saved);
+  assert.ok(s.sent.every(job=>job.type==='telegram-send'));
+  assert.doesNotMatch(JSON.stringify(s.sent),/SYNTHETIC_SEND_SECRET|synthetic-menu-google-owner|synthetic-email-binding/);
+  for(const job of s.sent)validateTelegramReplyMarkup(job.payload.replyMarkup);
+ }
+});
+test('cancel and stale daily delivery confirmations preserve the latest saved choice',async()=>{
+ const s=await emailSetup();await showMenu(s.store,s.queue,'delivery',1);await s.click('Both',2);await s.click('Cancel',3);
+ assert.equal(await s.store.get('settings','dailyBriefing'),null);
+ await s.click('Email only',4);
+ const changed={enabled:true,telegramEnabled:true,emailEnabled:false,time:'09:30',revision:4};
+ await s.store.put('settings','dailyBriefing',changed);
+ await assert.rejects(s.click('Confirm',5),error=>error.status===409&&/choices changed/.test(error.message));
+ assert.deepEqual(await s.store.get('settings','dailyBriefing'),changed);
+});
+test('daily email confirmation is bound to the linked chat, student, and link generation',async()=>{
+ const s=await emailSetup();await showMenu(s.store,s.queue,'delivery',1);await s.click('Both',2);
+ const data=s.button('Confirm').callback_data;
+ await handleMenuCallback(null,s.store,s.queue,{data,message:{chat:{id:202,type:'private'}}},3);
+ assert.equal(await s.store.get('settings','dailyBriefing'),null);
+ const other=setup(identityId('google','another-synthetic-student'));
+ await handleMenuCallback(null,other.store,other.queue,{data,message:{chat:{id:101,type:'private'}}},4);
+ assert.equal(await other.store.get('settings','dailyBriefing'),null);
+ await s.store.put('secrets','telegram',{chatId:101,linkedAt:'new-link'});
+ await handleMenuCallback(null,s.store,s.queue,{data,message:{chat:{id:101,type:'private'}}},5);
+ assert.equal(await s.store.get('settings','dailyBriefing'),null);assert.match(s.sent.at(-1).payload.text,/button expired/);
+});
+test('copied or disconnected Gmail grants cannot enable email from a Telegram button',async()=>{
+ const s=await emailSetup();await showMenu(s.store,s.queue,'delivery',1);await s.click('Email only',2);
+ await s.store.put('secrets','dailyEmailGoogle',{connectionRevision:'disconnected',disconnectedAt:new Date().toISOString()});
+ await s.click('Confirm',3);assert.equal(await s.store.get('settings','dailyBriefing'),null);
+ assert.match(s.sent.at(-1).payload.text,/Gmail delivery is disconnected/);
+ const other=setup(identityId('google','another-synthetic-student'));
+ await other.store.put('secrets','dailyEmailGoogle',{subject:'synthetic-menu-google-owner',email:'student@cornell.edu',connectionRevision:'copied',scope:GMAIL_SEND_SCOPE,refresh_token:'SYNTHETIC_SEND_SECRET'});
+ await showMenu(other.store,other.queue,'delivery',4);await other.click('Both',5);
+ assert.equal(await other.store.get('settings','dailyBriefing'),null);assert.ok(other.button('Connect Gmail delivery'));
+});
+test('Telegram-only and daily pause need confirmation and preserve topic choices and time',async()=>{
+ const s=setup();process.env.APP_ORIGIN='https://app.synthetic.example';
+ const initial={enabled:true,telegramEnabled:false,emailEnabled:true,time:'09:15'},topics={enabled:true,topics:{school:'both',events:'daily',jobs:'off'}};
+ await s.store.put('settings','dailyBriefing',initial);await s.store.put('settings','notifications',topics);
+ await showMenu(s.store,s.queue,'delivery',1);await s.click('Telegram only',2);
+ assert.deepEqual(await s.store.get('settings','dailyBriefing'),initial);await s.click('Confirm',3);
+ const telegram=await s.store.get('settings','dailyBriefing');assert.equal(telegram.telegramEnabled,true);assert.equal(telegram.emailEnabled,false);assert.equal(telegram.time,'09:15');
+ await s.click('Back',4);await s.click('Pause daily briefing',5);
+ assert.equal((await s.store.get('settings','dailyBriefing')).enabled,true);await s.click('Confirm',6);
+ const paused=await s.store.get('settings','dailyBriefing');assert.equal(paused.enabled,false);assert.equal(paused.telegramEnabled,true);assert.equal(paused.emailEnabled,false);assert.equal(paused.time,'09:15');
+ assert.deepEqual(await s.store.get('settings','notifications'),topics);assert.match(s.sent.at(-1).payload.text,/Paused at 09:15/);
 });

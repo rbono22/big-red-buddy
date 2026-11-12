@@ -88,9 +88,9 @@ test('approved all-day dates do not request a time and changed source copies rem
 async function queuedPayload(queue){const job=await queue.claim('test-worker',{types:['daily-briefing']});assert.ok(job);return job;}
 
 test('settings default to enabled 08:00 New York, validate edits and stay tenant-owned',async t=>{
-  const {db,store}=await fixture(t);assert.deepEqual(await readDailyBriefingSettings(store),{enabled:true,time:'08:00',timezone:'America/New_York',updatedAt:null});
+  const {db,store}=await fixture(t);assert.deepEqual(await readDailyBriefingSettings(store),{enabled:true,time:'08:00',timezone:'America/New_York',telegramEnabled:true,emailEnabled:false,updatedAt:null});
   await Promise.all([saveDailyBriefingSettings(store,{enabled:false}),saveDailyBriefingSettings(store,{time:'09:15'})]);assert.equal((await readDailyBriefingSettings(store)).enabled,false);assert.equal((await readDailyBriefingSettings(store)).time,'09:15');assert.equal((await readDailyBriefingSettings(db.forUser('other'))).time,'08:00');
-  for(const patch of [{time:'24:00'},{time:'8:00'},{time:'08:60'},{enabled:'true'},{timezone:'UTC'},{},null])await assert.rejects(saveDailyBriefingSettings(store,patch),{status:400});
+  for(const patch of [{time:'24:00'},{time:'8:00'},{time:'08:60'},{enabled:'true'},{emailEnabled:'true'},{telegramEnabled:0},{timezone:'UTC'},{},null])await assert.rejects(saveDailyBriefingSettings(store,patch),{status:400});
 });
 
 test('daily content separates approved schedule, optional campus events and review items without deadline descriptions',async t=>{
@@ -165,6 +165,13 @@ test('a full multi-topic briefing preserves a supported linked item from each se
  }
  await store.put('settings','academicCalendar',{lastError:'Unavailable'});await store.put('settings','campusCalendar',{calendarId:'campus',continuous:true,autoAddWarning:'Warning '.repeat(50)});await store.put('settings','partifulCalendar',{calendarId:'partiful',continuous:true});await store.put('settings','lumaCalendar',{calendarId:'luma',continuous:true});await store.put('settings','eventEmail',{labelId:'selected',continuous:true,lastScan:{truncated:true}});await store.put('settings','jobBoards',{boards:[{lastStatus:'error',truncated:true,pendingAlerts:10}]});
  const result=await buildDailyBriefing(store,{now:NOW});assert.ok(result.text.length<=3800,`length=${result.text.length}`);assert.match(result.text,/WSJ · The 10-Point/);assert.match(result.text,/PitchBook · The Daily Pitch/);assert.match(result.text,/WSJ supported lead/);assert.match(result.text,/Pitch supported lead/);for(const link of Object.values(links))assert.ok(result.text.includes(link));assert.match(result.text,/More newsletter detail in Big Red Buddy/);assert.equal(result.counts.news,2);assert.equal(result.counts.classes,30);assert.equal(result.newsSourceRevision,'all-topics-news');
+ // Email retains its complete, separately bounded sections before Telegram
+ // shrinks its message. News never silently loses its second/third item there.
+ const emailSections=Object.fromEntries(result.emailSections.map(section=>[section.sectionKey,section]));
+ assert.equal(emailSections.classes.items.length,5);assert.equal(emailSections.classes.total,30);assert.equal(emailSections.deadlines.items.length,5);
+ assert.equal(emailSections.news.items.length,2);for(const item of emailSections.news.items){assert.match(item,/Second supported item/);assert.match(item,/Third supported item/);}assert.doesNotMatch(result.text,/Second supported item|Third supported item/);
+ const emailJobs=result.emailSections.filter(section=>['jobs24h','jobsWeek'].includes(section.sectionKey)).flatMap(section=>section.items);
+ assert.equal(result.emailJobNotification.jobs.length,emailJobs.length);assert.equal(result.emailJobNotification.jobs.length,2);assert.ok(result.emailJobNotification.requireCurrentMatching);assert.equal(result.emailJobNotification.requireCurrentPublication,true);
  for(const misleading of ['No approved timed classes imported','No approved timed deadlines imported','No event entries available','No recently discovered matching roles','No cached selected newsletter summaries'])assert.equal(result.text.includes(misleading),false,misleading);
 });
 
@@ -232,4 +239,26 @@ test('a stale queued day is discarded and each student receives only their own c
   const {db,queue,store:a}=await fixture(t,'a'),b=db.forUser('b');await b.put('secrets','telegram',{chatId:456});await a.put('events','private',event('private','class',{title:'Student A only'}));await b.put('events','private',event('private','class',{title:'Student B only'}));
   assert.equal((await buildDailyBriefing(a,{now:NOW})).text.includes('Student B only'),false);assert.equal((await buildDailyBriefing(b,{now:NOW})).text.includes('Student A only'),false);
   await scheduleDailyBriefing(a,queue,{now:NOW});const job=await queuedPayload(queue);let calls=0;assert.equal((await dispatchDailyBriefing(a,job.payload,{now:NOW+86400000,send:async()=>{calls++;}})).reason,'not-current-day');assert.equal(calls,0);
+});
+
+test('email-only preferences suppress Telegram while legacy settings retain Telegram delivery',async t=>{
+ const legacy=await fixture(t,'legacy-channels');await legacy.store.put('settings','dailyBriefing',{enabled:true,time:'08:00'});
+ const legacySettings=await readDailyBriefingSettings(legacy.store);assert.equal(legacySettings.telegramEnabled,true);assert.equal(legacySettings.emailEnabled,false);
+ assert.equal((await scheduleDailyBriefing(legacy.store,legacy.queue,{now:NOW})).scheduled,true);const job=await queuedPayload(legacy.queue);
+ await saveDailyBriefingSettings(legacy.store,{telegramEnabled:false,emailEnabled:true});let sent=0;const result=await dispatchDailyBriefing(legacy.store,job.payload,{now:NOW,send:async()=>{sent++;return {result:{message_id:42}};}});assert.equal(result.reason,'telegram-disabled');assert.equal(sent,0);
+ const onlyEmail=await fixture(t,'email-only');await saveDailyBriefingSettings(onlyEmail.store,{telegramEnabled:false,emailEnabled:true});assert.equal((await scheduleDailyBriefing(onlyEmail.store,onlyEmail.queue,{now:NOW})).reason,'telegram-disabled');assert.equal((await onlyEmail.queue.list(onlyEmail.store.userId)).length,0);
+});
+
+test('email sections exclude disabled topics and retain only the chosen review category',async t=>{
+ const {store}=await fixture(t);await store.put('events','class',event('class','class',{title:'PRIVATE SCHOOL'}));await store.put('events','school-review',event('school-review','assignment',{title:'PRIVATE SCHOOL REVIEW',status:'review'}));await store.put('events','party',event('party','event',{title:'ALLOWED EVENT'}));await store.put('events','event-review',event('event-review','event',{title:'ALLOWED EVENT REVIEW',status:'review'}));await store.put('jobs','role',{id:'role',title:'PRIVATE JOB',publishedAt:new Date(NOW).toISOString()});
+ await saveNotificationPreferences(store,{topics:{school:'off',events:'daily',jobs:'alerts',news:'off'}});
+ let result=await buildDailyBriefing(store,{now:NOW});assert.deepEqual(result.emailSections.map(section=>section.sectionKey),['events','review']);assert.match(JSON.stringify(result.emailSections),/ALLOWED EVENT REVIEW/);assert.match(JSON.stringify(result.emailSections),/ALLOWED EVENT/);assert.doesNotMatch(JSON.stringify(result.emailSections),/PRIVATE SCHOOL|PRIVATE JOB/);assert.equal(result.emailJobNotification,null);
+ await saveNotificationPreferences(store,{topics:{events:'off',school:'daily'}});result=await buildDailyBriefing(store,{now:NOW});assert.deepEqual(result.emailSections.map(section=>section.sectionKey),['classes','deadlines','academic','review']);assert.match(JSON.stringify(result.emailSections),/PRIVATE SCHOOL REVIEW/);assert.doesNotMatch(JSON.stringify(result.emailSections),/ALLOWED EVENT|PRIVATE JOB/);
+});
+
+test('stale daily delivery settings proposals cannot overwrite another change',async t=>{
+ const {store}=await fixture(t),initial=await store.get('settings','dailyBriefing');assert.equal(initial,null);
+ await saveDailyBriefingSettings(store,{time:'09:30',telegramEnabled:false},{expectedPrevious:initial});const current=await store.get('settings','dailyBriefing');
+ await assert.rejects(saveDailyBriefingSettings(store,{time:'08:00',emailEnabled:true},{expectedPrevious:initial}),{status:409});assert.deepEqual(await store.get('settings','dailyBriefing'),current);
+ const saved=await saveDailyBriefingSettings(store,{emailEnabled:true},{expectedPrevious:current});assert.equal(saved.emailEnabled,true);assert.equal(saved.telegramEnabled,false);assert.equal(saved.time,'09:30');assert.equal((await store.get('settings','dailyBriefing')).revision,current.revision+1);
 });

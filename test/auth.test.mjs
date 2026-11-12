@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createAuth, CALENDAR_SCOPE, CAMPUS_CALENDAR_SCOPES, EVENT_EMAIL_SCOPE, identityId, pruneExpiredAuthRecords } from '../lib/auth.mjs';
+import { createAuth, CALENDAR_SCOPE, CAMPUS_CALENDAR_SCOPES, EVENT_EMAIL_SCOPE, GMAIL_SEND_SCOPE, identityId, pruneExpiredAuthRecords } from '../lib/auth.mjs';
 import { loadSecurityConfig, sha256 } from '../lib/security.mjs';
 
 function setup(overrides = {}) {
@@ -286,4 +286,71 @@ test('sheet invitations govern fresh Google login and revoke existing sessions w
  const revoked=await googleStart(f);f.setPayload(googlePayload(revoked,{sub:'google-carol',email:'carol@cornell.edu'}));await assert.rejects(callback(f,revoked),e=>e.code==='account_not_allowed');
  // A configured bootstrap member cannot bypass the now-authoritative sheet.
  const old=await googleStart(f);f.setPayload(googlePayload(old,{sub:'google-bob',email:'bob@cornell.edu'}));await assert.rejects(callback(f,old),e=>e.code==='account_not_allowed');
+});
+
+async function dailyEmailStudent(f) {
+  const login=await googleStart(f),res=response();f.setPayload(googlePayload(login));await callback(f,login,res);
+  const cookie=cookies(res),context=await f.auth.authenticate(request(cookie));
+  return {cookie,context,store:f.database.forUser(context.user.id)};
+}
+async function dailyEmailStart(f,student) {
+  const start=await googleStart(f,student.cookie,{purpose:'daily-email',userSession:student.context});
+  f.setPayload(googlePayload(start));f.setTokens({scope:`openid email ${GMAIL_SEND_SCOPE}`});return start;
+}
+test('daily email consent requests send-only access and stores a separate owned grant without enabling delivery',async()=>{
+  const f=setup(),student=await dailyEmailStudent(f),{store}=student;
+  await store.put('secrets','eventEmailGoogle',{subject:'private-reader',refresh_token:'read-only-refresh',scope:EVENT_EMAIL_SCOPE});
+  await store.put('secrets','google',{refresh_token:'calendar-refresh',scope:CALENDAR_SCOPE});
+  await store.put('settings','dailyBriefing',{enabled:true,time:'08:00'});
+  const start=await dailyEmailStart(f,student);
+  assert.deepEqual(start.url.searchParams.get('scope').split(' '),['openid','email','profile',GMAIL_SEND_SCOPE]);
+  assert.equal(start.url.searchParams.get('hd'),'cornell.edu');assert.equal(start.url.searchParams.get('login_hint'),'alice@cornell.edu');
+  assert.equal(start.url.searchParams.get('access_type'),'offline');assert.equal(start.url.searchParams.get('include_granted_scopes'),null);
+  assert.equal(start.url.searchParams.get('code_challenge_method'),'S256');
+  const res=response(),result=await callback(f,start,res),grant=await store.get('secrets','dailyEmailGoogle');
+  assert.equal(result.purpose,'daily-email');assert.equal(result.redirectPath,'/#connections');assert.equal(result.tokens,undefined);
+  assert.equal(result.user.id,student.context.user.id);assert.equal(res.getHeader('Set-Cookie'),undefined);
+  assert.equal(grant.subject,'google-alice');assert.equal(grant.email,'alice@cornell.edu');assert.equal(grant.refresh_token,'refresh');
+  assert.equal(grant.id_token,undefined);assert.match(grant.connectionRevision,/^[\w-]{43}$/);
+  assert.deepEqual(await store.get('settings','dailyBriefing'),{enabled:true,time:'08:00'});
+  assert.equal((await store.get('secrets','eventEmailGoogle')).refresh_token,'read-only-refresh');assert.equal((await store.get('secrets','google')).refresh_token,'calendar-refresh');
+  const other=await dev(f,'bob@cornell.edu');assert.equal(await f.database.forUser(other.context.user.id).get('secrets','dailyEmailGoogle'),undefined);
+  await assert.rejects(callback(f,start),e=>e.code==='invalid_oauth_state');
+});
+test('daily email consent rejects missing send scope, wrong or unverified identities, session switches and absent offline token',async()=>{
+  for(const variant of ['scope','account','domain','nonce','unverified','session','offline']){
+    const f=setup(),student=await dailyEmailStudent(f),start=await dailyEmailStart(f,student);
+    if(variant==='scope')f.setTokens({scope:EVENT_EMAIL_SCOPE});
+    if(variant==='account')f.setPayload(googlePayload(start,{sub:'google-bob',email:'bob@cornell.edu'}));
+    if(variant==='domain')f.setPayload(googlePayload(start,{email:'alice@gmail.com',hd:undefined}));
+    if(variant==='nonce')f.setPayload(googlePayload(start,{nonce:'wrong'}));
+    if(variant==='unverified')f.setPayload(googlePayload(start,{email_verified:false}));
+    if(variant==='session'){const bob=await dev(f,'bob@cornell.edu');start.cookie=`${bob.cookie}; ${start.cookie.split('; ').find(c=>c.startsWith('dabas_oauth='))}`;}
+    if(variant==='offline'){await student.store.put('secrets','eventEmailGoogle',{subject:'google-alice',refresh_token:'read-only-refresh'});await student.store.put('secrets','google',{refresh_token:'calendar-refresh'});f.setTokens({scope:GMAIL_SEND_SCOPE,refresh_token:undefined});}
+    await assert.rejects(callback(f,start),e=>e.code===({scope:'missing_email_send_scope',account:'account_mismatch',domain:'account_not_allowed',nonce:'invalid_identity',unverified:'invalid_identity',session:'invalid_oauth_session',offline:'missing_refresh_token'})[variant],variant);
+    assert.equal(await student.store.get('secrets','dailyEmailGoogle'),undefined,variant);
+  }
+});
+test('daily email reconnect reuses only its same-subject send refresh token and fences competing OAuth callbacks',async()=>{
+  const f=setup(),student=await dailyEmailStudent(f),first=await dailyEmailStart(f,student);await callback(f,first);
+  const before=await student.store.get('secrets','dailyEmailGoogle');
+  const a=await dailyEmailStart(f,student),b=await dailyEmailStart(f,student);
+  f.setPayload(googlePayload(a));f.setTokens({scope:GMAIL_SEND_SCOPE,refresh_token:undefined});await callback(f,a);
+  const current=await student.store.get('secrets','dailyEmailGoogle');assert.equal(current.refresh_token,before.refresh_token);assert.notEqual(current.connectionRevision,before.connectionRevision);
+  f.setPayload(googlePayload(b));await assert.rejects(callback(f,b),e=>e.code==='connection_changed');assert.deepEqual(await student.store.get('secrets','dailyEmailGoogle'),current);
+  await student.store.put('secrets','dailyEmailGoogle',{...current,subject:'different-google-sub'});
+  const switched=await dailyEmailStart(f,student);f.setTokens({scope:GMAIL_SEND_SCOPE,refresh_token:undefined});await assert.rejects(callback(f,switched),e=>e.code==='missing_refresh_token');
+});
+test('a disconnect revision prevents pending Gmail consent from reconnecting and no token is inherited from its tombstone',async()=>{
+  const f=setup(),student=await dailyEmailStudent(f),start=await dailyEmailStart(f,student);
+  const tombstone={connectionRevision:'disconnect-generation',disconnectedAt:'2026-11-12T12:00:00Z'};await student.store.put('secrets','dailyEmailGoogle',tombstone);
+  await assert.rejects(callback(f,start),e=>e.code==='connection_changed');assert.deepEqual(await student.store.get('secrets','dailyEmailGoogle'),tombstone);
+  const retry=await dailyEmailStart(f,student);f.setTokens({scope:GMAIL_SEND_SCOPE,refresh_token:undefined});await assert.rejects(callback(f,retry),e=>e.code==='missing_refresh_token');
+  const explicit=await dailyEmailStart(f,student);f.setTokens({scope:GMAIL_SEND_SCOPE,refresh_token:'new-consent-token'});await callback(f,explicit);assert.equal((await student.store.get('secrets','dailyEmailGoogle')).refresh_token,'new-consent-token');
+});
+test('a disconnect racing the final Gmail grant write wins the exact-value compare and set',async()=>{
+  const f=setup(),student=await dailyEmailStudent(f),start=await dailyEmailStart(f,student),original=f.database.forUser.bind(f.database);
+  const tombstone={connectionRevision:'raced-disconnect',disconnectedAt:'2026-11-12T12:00:00Z'};
+  f.database.forUser=userId=>{const store=original(userId),compare=store.compareAndSet.bind(store);return{...store,async compareAndSet(bucket,id,previous,next){if(bucket==='secrets'&&id==='dailyEmailGoogle')await store.put(bucket,id,tombstone);return compare(bucket,id,previous,next);}};};
+  await assert.rejects(callback(f,start),e=>e.code==='connection_changed');assert.deepEqual(await student.store.get('secrets','dailyEmailGoogle'),tombstone);
 });
