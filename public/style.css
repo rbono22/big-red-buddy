@@ -1328,3 +1328,10 @@ details.course-freshness { padding: 0; border: 0; background: none; margin: 0 0 
 }
 .syllabus-upload-area .course-syllabus-step { margin: 0; }
 #academic-schedule-area > .empty { margin-bottom: 24px; }
+
+/* Page cleanup */
+@media (min-width: 1200px) { .integration-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.integration-grid + .source-heading, .event-manual { margin-top: 32px; }
+.studio-add .fine-print { margin-bottom: 0; }
+.news-subscribe-links { margin-top: 16px; }
+.event-manual { margin-bottom: 24px; }
