@@ -34,6 +34,7 @@ import { createSlackAuth } from './lib/slack-auth.mjs';
 import { loadSecurityConfig, applySecurityHeaders, enforceRequestHost, enforceRequestOrigin, RateLimiter, clientIP, safeError, HttpError } from './lib/security.mjs';
 import { TZ, idFor, normalizeEvent, calendarICS, localISO, calendarBounds } from './lib/domain.mjs';
 import { connectCanvasFeed, disconnectCanvasFeed, readCanvasStatus, saveCourseAIPolicy } from './lib/canvas-feed.mjs';
+import { readCanvasEmailStatus, setCanvasEmailWatching } from './lib/canvas-email.mjs';
 import { persistCandidates } from './lib/ingest.mjs';
 import { audit, nowISO, jsonFetch, reconcileReminders } from './lib/integrations.mjs';
 import { createTelegramLink, disconnectTelegram } from './lib/telegram.mjs';
@@ -167,7 +168,7 @@ async function state(store) {
     news:await listNews(store),
     eventHub:await buildEventHub(store),
     academicCalendar:academic.settings,
-    canvas:await readCanvasStatus(store),
+    canvas:{...await readCanvasStatus(store),email:await readCanvasEmailStatus(store)},
     eventEmail:await listEventEmailInbox(store),
     profile: await store.get('settings', 'profile'),
     reminderSettings: await readReminderSettings(store),
@@ -527,6 +528,15 @@ async function route(req, res) {
   }
   if(p==='/api/canvas/disconnect'&&req.method==='POST'){
     const result=await disconnectCanvasFeed(store);await audit(store,'canvas','Canvas calendar feed disconnected; imported items kept.');return json(res,200,result);
+  }
+  if(p==='/api/canvas/email'&&req.method==='POST'){
+    const b=await body(req),status=await setCanvasEmailWatching(store,{enabled:b.enabled});
+    await audit(store,'canvas',`Canvas email watching ${status.enabled?'on':'off'}.`);
+    return json(res,200,status.enabled?{...status,...await task(user,'canvas-email-sync',{}, {retrySafe:true,maxAttempts:2})}:status);
+  }
+  if(p==='/api/canvas/email/sync'&&req.method==='POST'){
+    heavyLimiter.check(user.id);if(!(await store.get('settings','canvasEmail'))?.enabled)throw new HttpError(409,'Turn on Canvas email watching first.');
+    return json(res,202,await task(user,'canvas-email-sync',{}, {retrySafe:true,maxAttempts:2}));
   }
   if(p==='/api/canvas/policy'&&req.method==='POST'){
     const b=await body(req);return json(res,200,await saveCourseAIPolicy(store,{courseCode:b.courseCode,policy:b.policy},{queue}));

@@ -1349,3 +1349,8 @@ details.course-freshness { padding: 0; border: 0; background: none; margin: 0 0 
 .canvas-ai-table th, .canvas-ai-table td { text-align: left; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .canvas-ai-table select { min-width: 200px; }
 @media (max-width: 640px) { .canvas-form { grid-template-columns: minmax(0, 1fr); } .canvas-ai-table select { min-width: 0; width: 100%; } }
+.canvas-email { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.canvas-email h3 { margin: 0 0 8px; font-size: 16px; }
+.canvas-email-log { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 8px; }
+.canvas-email-log li { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; }
+.canvas-email-log small { color: var(--muted); font-size: 13px; }
