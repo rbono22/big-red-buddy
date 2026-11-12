@@ -102,6 +102,15 @@ test('paused and unlinked students retain matches without sending or sharing ale
   await refreshJobBoard(b,'example','ashby',{...s.options,now:NOW+6*3600000});assert.equal((await s.queue.list('student-b')).length,0);assert.equal((await b.all('jobAlerts')).length,0);assert.equal((await b.all('jobs')).length,1);
 });
 
+test('skipped roles stay out of alerts until restored, including legacy skip records',async t=>{
+ const s=await setup(t);await refreshOnly(s.store,'example','ashby',s.options);const [job]=await s.store.all('jobs');
+ await s.store.put('skippedJobs',job.id,{id:job.id});
+ const hidden=await dispatchJobAlerts(s.store,s.options);assert.equal(hidden.alertQueued,0);assert.equal((await telegramTasks(s.queue,s.store.userId)).length,0);
+ await s.store.put('skippedJobs',job.id,{id:job.id,hidden:false,revision:'restored'});
+ const restored=await dispatchJobAlerts(s.store,{...s.options,now:NOW+60000});assert.equal(restored.alertQueued,1);
+ assert.equal((await telegramTasks(s.queue,s.store.userId)).length,1);
+});
+
 test('a per-student board lease prevents concurrent duplicate fetches without blocking another board',async t=>{
   const s=await setup(t);let started,release;const pending=new Promise(resolve=>{release=resolve;}),ready=new Promise(resolve=>{started=resolve;});
   const first=refreshJobBoard(s.store,'example','ashby',{...s.options,fetchImpl:async()=>{started();await pending;return source([posting()])();}});await ready;

@@ -10,7 +10,7 @@
   --charcoal: #222222;
   --accent: #b31b1b;
   --accent-soft: #fdf0f0;
-  --success-dot: #c7d41e;
+  --success-dot: #9aca8b;
   --red: #b31b1b;
   --red-soft: #fcf0f2;
   --green: #59611b;
@@ -35,7 +35,7 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 img, svg { max-width: 100%; }
 button, input, textarea, select, main, section, article, form { min-width: 0; }
 h1, h2, h3, p { margin-top: 0; }
-h1 { margin-bottom: 16px; font: 400 clamp(40px, 3.4vw, 48px)/1.14 var(--serif); letter-spacing: -.035em; text-wrap: balance; }
+h1 { margin-bottom: 16px; font: 400 clamp(32px, 3vw, 42px)/1.18 var(--serif); letter-spacing: -.025em; text-wrap: balance; }
 h2 { margin-bottom: 0; font-size: 18px; font-weight: 700; line-height: 1.35; letter-spacing: -.015em; }
 h3 { margin-bottom: 8px; font-size: 16px; line-height: 1.4; font-weight: 700; }
 p { margin-bottom: 16px; max-width: 70ch; }
@@ -44,19 +44,19 @@ strong { font-weight: 700; }
 .sr-only { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 
 /* Navigation retains its labels at every viewport size. */
-.sidebar { width: var(--sidebar); position: fixed; inset: 0 auto 0 0; z-index: 10; display: flex; flex-direction: column; background: var(--charcoal); color: var(--white); padding: 32px 24px 0; overflow-y: auto; }
+.sidebar { width: var(--sidebar); position: fixed; inset: 0 auto 0 0; z-index: 10; display: flex; flex-direction: column; background: var(--charcoal); color: var(--white); padding: 24px 24px 0; overflow-y: auto; }
 .brand { display: inline-flex; align-items: center; gap: 12px; width: fit-content; min-height: 48px; font: 700 22px/1.12 var(--sans); letter-spacing: -.025em; }
 .brand-mark { display: grid; place-items: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 10px; color: var(--white); background: var(--accent); font: 700 16px/1 var(--sans); letter-spacing: -.04em; }
 .brand-period { color: inherit; }
 .brand .brand-period { color: var(--accent); }
-.workspace { display: flex; align-items: center; gap: 12px; margin: 32px 0; padding: 16px 0; border-top: 1px solid #5b5b5b; border-bottom: 1px solid #5b5b5b; font-size: 14px; font-weight: 700; }
+.workspace { display: flex; align-items: center; gap: 12px; margin: 24px 0; padding: 16px 0; border-top: 1px solid #5b5b5b; border-bottom: 1px solid #5b5b5b; font-size: 14px; font-weight: 700; }
 .workspace-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 8px; background: #3c3c3c; font-size: 12px; color: var(--white); }
 .workspace div > span { display: block; color: var(--cool); font-size: 12px; font-weight: 400; letter-spacing: .035em; margin-top: 4px; }
 .workspace-chevron { color: var(--cool); margin-left: auto; }
 .navigation { margin-bottom: 32px; }
 .nav-label { margin: 0 8px 8px; color: var(--cool); font-size: 12px; line-height: 1.4; letter-spacing: .08em; font-weight: 700; }
-.second-label { margin-top: 32px; }
-nav { display: grid; gap: 8px; }
+.second-label { margin-top: 24px; }
+nav { display: grid; gap: 4px; }
 nav a { min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid transparent; border-radius: 8px; color: #ededed; font-size: 14px; line-height: 1.35; }
 nav a:hover { background: #383838; color: var(--white); }
 nav a.active { color: var(--white); background: #3c3c3c; border-color: #727272; box-shadow: inset 3px 0 0 var(--accent); font-weight: 700; }
@@ -78,16 +78,16 @@ nav a.active .nav-icon { color: var(--white); }
 
 /* Page structure and the few actions that deserve emphasis. */
 .shell { margin-left: var(--sidebar); min-height: 100vh; display: flex; flex-direction: column; min-width: 0; }
-.topbar { min-height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 40px; border-bottom: 1px solid var(--line); background: var(--white); font-size: 13px; }
+.topbar { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 16px 40px; border-bottom: 1px solid var(--line); background: var(--white); font-size: 13px; }
 .topbar > div { min-width: 0; }
 .crumb { color: var(--muted); }
 .crumb-divider { margin: 0 12px; color: var(--muted); }
 .topbar-right { display: flex; align-items: center; gap: 16px; color: var(--muted); flex-shrink: 0; }
 .prototype-label { font-size: 12px; line-height: 1.4; letter-spacing: .04em; border: 1px solid var(--cool); padding: 4px 8px; border-radius: 4px; color: var(--ink); }
 main { width: 100%; max-width: 1504px; margin: 0 auto; padding: 40px; flex: 1; }
-.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin-bottom: 32px; }
+.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
 .page-heading > div:first-child { min-width: 0; max-width: 760px; }
-.eyebrow { font-size: 12px; font-weight: 700; line-height: 1.5; letter-spacing: .09em; color: var(--muted); margin-bottom: 12px; }
+.eyebrow { font-size: 12px; font-weight: 700; line-height: 1.5; letter-spacing: .06em; color: var(--muted); margin-bottom: 12px; }
 .subtitle { color: var(--muted); font-size: 16px; line-height: 1.65; margin-bottom: 0; max-width: 70ch; }
 .heading-actions, .form-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .heading-actions { justify-content: flex-end; flex-shrink: 0; max-width: 360px; }
@@ -476,7 +476,7 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
   .signed-out main { padding-top: 32px; }
 }
 @media (max-width: 620px) {
-  h1 { font-size: 40px; }
+  h1 { font-size: 34px; }
   .sidebar { padding: 20px 16px 0; column-gap: 16px; }
   .workspace { font-size: 13px; gap: 8px; }
   .workspace-icon { display: none; }
@@ -773,22 +773,22 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 }
 
 /* Event discovery keeps source administration behind one deliberate disclosure. */
-.event-hub-hero { display: flex; justify-content: space-between; gap: 32px; padding: 30px; border: 1px solid #edc4c4; border-radius: 16px; background: linear-gradient(120deg, #fff 35%, #fdf0f0); }
-.event-hub-hero h2 { font: 400 clamp(28px, 3vw, 38px)/1.15 var(--serif); margin: 10px 0 12px; }
+.event-hub-hero { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
+.event-hub-hero h2 { font: 700 22px/1.35 var(--sans); margin: 8px 0; letter-spacing: -.015em; }
 .event-hub-hero .eyebrow { color: var(--accent); }
 .event-hub-hero p { margin: 0; max-width: 52ch; }
 .event-hub-counts { display: flex; align-items: center; gap: 28px; flex-shrink: 0; }
 .event-hub-counts div { display: grid; }
-.event-hub-counts strong { font: 400 38px/1.2 var(--serif); color: var(--accent); }
+.event-hub-counts strong { font: 700 28px/1.2 var(--sans); color: var(--ink); font-variant-numeric: tabular-nums; }
 .event-hub-counts span { font-size: 12px; color: var(--muted); }
 .event-holiday-strip { display: grid; grid-template-columns: minmax(180px,1.2fr) repeat(3,minmax(0,1fr)); gap: 12px; margin: 20px 0; padding: 18px; border: 1px solid #d9ddbd; border-radius: 12px; background: #f6f7eb; }
 .event-holiday-label { display: grid; gap: 4px; align-content: center; }
 .event-holiday-label > span { color: #59611b; font-size: 23px; line-height: 1; }
-.event-holiday-label small { font-size: 11px; color: #58602b; line-height: 1.5; }
+.event-holiday-label small { font-size: 13px; color: #58602b; line-height: 1.5; }
 .event-holiday { display: grid; align-content: start; gap: 4px; padding: 12px; text-align: left; color: var(--ink); background: #fff; border: 1px solid #d9ddbd; border-radius: 8px; }
 .event-holiday > span { color: #59611b; font-size: 12px; font-weight: 700; }
 .event-holiday strong { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
-.event-holiday small { font-size: 11px; margin-top: 8px; text-decoration: underline; text-underline-offset: 3px; }
+.event-holiday small { font-size: 13px; margin-top: 8px; text-decoration: underline; text-underline-offset: 3px; }
 .event-hub-controls { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; margin: 24px 0 16px; }
 .event-hub-search { display: flex; gap: 8px; }
 .event-hub-search input { flex: 1; width: auto; }
@@ -798,7 +798,7 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 .event-filter:hover { border-color: var(--accent); }
 .event-filter.is-selected { color: #fff; border-color: var(--accent); background: var(--accent); }
 .event-filter-row { grid-column: 1 / -1; display: flex; gap: 16px; align-items: center; }
-.event-filter-label { flex: 0 0 65px; font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
+.event-filter-label { flex: 0 0 65px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .08em; }
 .event-hub-status p { font-size: 13px; margin: 8px 0; }
 .event-agenda { margin-top: 24px; }
 .event-day { margin-bottom: 28px; }
@@ -815,11 +815,11 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 .event-card-when { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
 .event-card-location { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
 .event-card-sources { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.event-card-sources span { padding: 3px 8px; font-size: 11px; border-radius: 5px; background: #f1f1f1; }
+.event-card-sources span { padding: 3px 8px; font-size: 12px; border-radius: 5px; background: #f1f1f1; }
 .event-card-sources .event-merged { color: #59611b; background: #f3f5df; }
 .event-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 8px; }
-.event-card-actions .button { font-size: 12px; padding: 10px 12px; }
-.event-registration { font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; padding: 10px 0; min-height: 44px; }
+.event-card-actions .button { font-size: 14px; padding: 10px 12px; }
+.event-registration { font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; padding: 10px 0; min-height: 44px; }
 .event-hub-empty { text-align: center; padding: 32px; }
 .event-hub-empty > span { display: block; color: var(--accent); font: 400 40px var(--serif); }
 .event-hub-empty p { margin: 12px auto 18px; }
@@ -851,7 +851,7 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 @media(max-width:620px) { .event-hub-hero { padding: 22px; } .event-hub-counts { gap: 32px; } .event-holiday-strip { grid-template-columns: minmax(0,1fr); } .event-day-cards { grid-template-columns: minmax(0,1fr); } .event-filter-row { align-items: flex-start; flex-direction: column; gap: 6px; } .event-filter-label { flex-basis: auto; } .event-hub-card { padding: 18px; } .event-sources > summary { padding: 18px; } .event-sources-body { padding: 12px; } .event-hub-search { flex-wrap: wrap; } .event-hub-search input { flex-basis: 170px; } }
 .event-source-health { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0; }
 .event-source-health button { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); font-size: 12px; }
-.event-source-health span { color: var(--muted); font-size: 11px; }
+.event-source-health span { color: var(--muted); font-size: 13px; }
 .event-mini-calendar { display: grid; grid-template-columns: minmax(300px,.85fr) minmax(0,1.15fr); border: 1px solid var(--line); border-radius: 12px; background: var(--white); margin: 20px 0 24px; }
 .event-calendar-month-panel { padding: 22px 24px 16px; min-width: 0; }
 .event-calendar-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 16px; }
@@ -876,23 +876,23 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 .event-calendar-key { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--muted); margin: 16px 0 0; }
 .event-calendar-key > span:last-child { margin-left: auto; }
 .event-calendar-preview { border-left: 1px solid var(--line); padding: 24px; display: flex; flex-direction: column; min-width: 0; background: #fdfcfc; border-radius: 0 12px 12px 0; }
-.event-calendar-preview-heading .eyebrow { color: var(--accent); font-size: 10px; margin-bottom: 8px; }
+.event-calendar-preview-heading .eyebrow { color: var(--accent); font-size: 12px; margin-bottom: 8px; }
 .event-calendar-preview-heading h3 { font: 400 25px/1.3 var(--serif); margin-bottom: 4px; }
 .event-calendar-preview-heading p { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
 .event-calendar-preview-item { display: flex; align-items: flex-start; gap: 12px; padding: 13px 0; background: transparent; border: 0; border-top: 1px solid var(--line); text-align: left; color: var(--ink); width: 100%; }
 .event-calendar-preview-item:hover .event-calendar-item-body > strong { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
-.event-calendar-item-time { flex: 0 0 64px; font-size: 11px; font-weight: 700; line-height: 1.5; padding-top: 2px; }
+.event-calendar-item-time { flex: 0 0 72px; font-size: 13px; font-weight: 700; line-height: 1.5; padding-top: 2px; }
 .event-calendar-item-body { min-width: 0; display: grid; gap: 3px; }
 .event-calendar-item-body > strong { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .event-calendar-item-body > span { color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.event-calendar-item-body > small { color: var(--muted); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.event-calendar-item-body > small { color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .event-calendar-item-arrow { margin-left: auto; color: var(--accent); font-size: 15px; }
 .event-calendar-no-plans { display: grid; align-content: center; justify-items: start; min-height: 145px; padding: 12px 0; }
 .event-calendar-no-plans > span { color: var(--accent); font-size: 25px; }
 .event-calendar-no-plans > strong { font-size: 15px; margin: 4px 0; }
 .event-calendar-no-plans p { font-size: 12px; color: var(--muted); max-width: 40ch; }
 .event-calendar-open-day { font-size: 12px; align-self: flex-start; padding-left: 0; margin: 0 0 4px; }
-.event-calendar-caption { font-size: 11px; line-height: 1.5; color: var(--muted); margin: auto 0 0; padding-top: 14px; }
+.event-calendar-caption { font-size: 13px; line-height: 1.5; color: var(--muted); margin: auto 0 0; padding-top: 14px; }
 @media(max-width:1100px) { .event-mini-calendar { grid-template-columns: minmax(270px,.9fr) minmax(0,1.1fr); } .event-calendar-month-panel { padding: 18px 16px 14px; } .event-calendar-preview { padding: 20px; } .event-calendar-heading h3 { font-size: 20px; } }
 @media(max-width:740px) { .event-mini-calendar { grid-template-columns: minmax(0,1fr); } .event-calendar-preview { border-left: 0; border-top: 1px solid var(--line); border-radius: 0 0 12px 12px; } .event-calendar-month-panel { padding: 18px 16px 14px; } }
 @media(max-width:380px) { .event-calendar-month-panel { padding: 14px 10px; } .event-calendar-heading h3 { font-size: 19px; } .event-calendar-heading { flex-wrap: wrap; } .event-calendar-day { min-height: 44px; } .event-calendar-grid, .event-calendar-weekdays { gap: 2px; } .event-calendar-preview { padding: 18px 14px; } .event-calendar-item-time { flex-basis: 54px; } .event-calendar-preview-item { gap: 8px; } }
@@ -1069,25 +1069,25 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 .career-search-bar { margin:0 0 18px; padding:20px; background:#fff; border:1px solid var(--line); border-radius:12px; }
 .career-search-inputs { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto; align-items:end; gap:14px; }
 .career-search-inputs > div { min-width:0; }
-.career-search-inputs label { font-size:12px; }
+.career-search-inputs label { font-size:14px; }
 .career-search-inputs input { min-height:48px; padding:12px 14px; }
 .career-search-inputs > .button { min-height:48px; white-space:nowrap; }
 .career-search-bar .form-help { margin:10px 0 0; font-size:12px; }
 .career-search-settings { margin-top:10px; font-size:13px; }
-.career-search-settings > summary { cursor:pointer; display:list-item; color:var(--muted); min-height:28px; }
+.career-search-settings > summary { cursor:pointer; display:list-item; color:var(--ink); min-height:44px; padding:10px 0; }
 .career-search-settings > div { border-top:1px solid var(--line); margin-top:10px; padding-top:16px; max-width:660px; }
 .career-search-settings select { max-width:280px; }
 .career-search-settings .button { margin-top:14px; }
 .career-filter-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
 .career-filter-toolbar .job-recency-controls { margin:0; gap:6px; }
-.career-filter-toolbar .event-filter { font-size:12px; padding:8px 13px; min-height:40px; border-radius:22px; }
+.career-filter-toolbar .event-filter { font-size:14px; padding:8px 13px; min-height:44px; border-radius:22px; }
 .career-filter-toolbar > .button { padding:8px 0; }
 .career-quick-filters { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px 14px; max-width:720px; margin-top:14px; }
 .career-quick-filters > div { min-width:0; }
-.career-quick-filters label, .career-more-filter-fields label { font-size:12px; }
+.career-quick-filters label, .career-more-filter-fields label { font-size:14px; }
 .career-quick-filters select { font-size:13px; padding:10px 30px 10px 12px; min-height:44px; border-radius:8px; }
 #career-more-filters { grid-column:1/-1; }
-#career-more-filters > summary { display:list-item; cursor:pointer; font-size:13px; font-weight:700; padding:6px 0; min-height:32px; }
+#career-more-filters > summary { display:list-item; cursor:pointer; font-size:14px; font-weight:700; padding:10px 0; min-height:44px; }
 .career-more-filter-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:16px; background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px; margin:10px 0 16px; }
 .career-more-filter-fields > div { min-width:0; }
 .career-more-filter-fields input { font-size:14px; padding:10px 12px; }
@@ -1109,13 +1109,13 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 .career-job-summary > strong { display:block; font-size:15px; line-height:1.45; color:var(--ink); }
 .career-job-row.is-selected .career-job-summary > strong { color:var(--red); }
 .career-job-row .company { display:block; margin:5px 0 0; font-size:13px; text-transform:none; letter-spacing:0; font-weight:400; color:var(--ink); }
-.career-job-row .location { display:block; margin:5px 0; font-size:12px; line-height:1.5; }
-.career-row-salary { display:block; font-size:12px; line-height:1.6; margin-top:4px; }
-.career-job-row .job-posted { display:block; margin:9px 0 0; font-size:11px; font-weight:500; color:var(--muted); }
-.career-job-summary .tag { display:inline-block; margin-top:8px; font-size:10px; }
+.career-job-row .location { display:block; margin:5px 0; font-size:13px; line-height:1.5; }
+.career-row-salary { display:block; font-size:13px; line-height:1.6; margin-top:4px; }
+.career-job-row .job-posted { display:block; margin:9px 0 0; font-size:13px; font-weight:500; color:var(--muted); }
+.career-job-summary .tag { display:inline-block; margin-top:8px; font-size:12px; }
 .career-job-row-footer { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-left:54px; margin-top:4px; }
-.career-job-row-footer > span { font-size:10px; color:var(--muted); }
-.career-job-row-footer .button { padding:5px 8px; min-height:38px; font-size:12px; }
+.career-job-row-footer > span { font-size:12px; color:var(--muted); }
+.career-job-row-footer .button { padding:8px 10px; min-height:44px; font-size:14px; }
 .career-job-detail { min-width:0; max-height:780px; overflow:auto; padding:28px; }
 .career-detail-company { display:flex; gap:12px; align-items:center; font-size:14px; margin-bottom:22px; }
 .career-detail-company strong { overflow-wrap:anywhere; }
@@ -1125,7 +1125,7 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 .career-fact-chips { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; }
 .career-fact-chips span { padding:7px 11px; border:1px solid var(--line); border-radius:20px; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .career-detail-actions { display:flex; flex-wrap:wrap; gap:10px; margin:22px 0 14px; }
-.career-detail-actions .button { padding:11px 16px; font-size:13px; }
+.career-detail-actions .button { padding:11px 16px; font-size:14px; }
 .career-detail-actions + .form-help { font-size:12px; }
 .career-detail-section { margin-top:28px; padding-top:22px; border-top:1px solid var(--line); }
 .career-detail-section h4, .career-job-detail .job-warm-leads h4 { font-size:16px; margin:0 0 14px; }
@@ -1174,12 +1174,12 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
  .career-page-heading h1 { font-size:25px; }
  .career-page-heading p { font-size:13px; }
  .career-tabs { gap:0; margin-bottom:18px; }
- .career-tabs [role=tab] { padding:12px; font-size:12px; }
+ .career-tabs [role=tab] { padding:12px; font-size:14px; }
  .career-search-bar { padding:16px; }
  .career-search-inputs { grid-template-columns:minmax(0,1fr); gap:12px; }
  .career-search-inputs > .button { width:100%; }
  .career-quick-filters { grid-template-columns:minmax(0,1fr); }
- .career-filter-toolbar .event-filter { font-size:11px; padding:8px 11px; }
+ .career-filter-toolbar .event-filter { font-size:13px; padding:8px 11px; }
  .career-more-filter-fields { grid-template-columns:minmax(0,1fr); padding:14px; }
  .career-results-heading { margin-top:18px; gap:10px; }
  .career-job-row.job-card { padding:18px 14px 10px; }
@@ -1192,4 +1192,89 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
  .career-answer-tools > div, .career-workbench-body { padding:0 12px 12px; }
  .career-sources-body { padding:0 12px 12px; }
  .career-job-detail .job-warm-leads { padding:16px; }
+}
+
+/* HCI: readable supporting details, predictable controls, and a quiet next step. */
+.career-job-description, .chat-answer, .evidence-text { max-width: 72ch; }
+.career-job-select:focus-visible { outline-offset: 3px; border-radius: 4px; }
+.career-job-detail :focus-visible { scroll-margin-block: 16px; }
+.career-tabs [role='tab']:focus-visible { outline-offset: -4px; }
+.career-search-bar .form-help, .career-results-heading p,
+.career-detail-posted, .career-detail-actions + .form-help,
+.career-job-detail .job-warm-leads .form-help { font-size: 13px; }
+.event-source-health button { flex-wrap: wrap; font-size: 14px; text-align: left; }
+.event-calendar-item-body > strong { display: block; overflow: visible; }
+.event-calendar-nav button { min-width: 44px; font-size: 13px; }
+.reminder-row-main { grid-template-columns: minmax(0, 1fr) 44px; }
+.reminder-remove { width: 44px; min-height: 44px; }
+.reminder-bot-help > summary, .news-source-notes > summary,
+.experience-evidence > summary, .job-experience-fit summary,
+.resume-facts > summary, .answer-evidence > summary,
+.application-tracker-evidence > summary, .career-posting-facts > summary {
+  min-height: 44px; padding-block: 10px;
+}
+input, select, textarea, button, summary, [tabindex] { scroll-margin-block: 84px 24px; }
+button:disabled, input:disabled, select:disabled, textarea:disabled { cursor: not-allowed; }
+.nav-toggle { display: none; transition: none; }
+#activity-status { margin: 16px 40px 0; padding: 12px 16px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 8px; background: var(--white); color: var(--ink); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.app-busy button:disabled { cursor: progress; }
+#toast.visible { display: flex; align-items: flex-start; gap: 12px; }
+#toast-message { min-width: 0; align-self: center; }
+#close-toast { display: grid; place-items: center; flex: 0 0 44px; min-width: 44px; min-height: 44px; margin: -6px -12px -6px 0; padding: 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: inherit; font: 700 22px/1 var(--sans); }
+#close-toast:hover { border-color: currentColor; }
+#toast :focus-visible { outline-color: var(--white); outline-offset: -2px; }
+
+@media (max-width: 900px) {
+  /* Inline disclosure, so keyboard focus never moves behind an overlay. */
+  body { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto 1fr auto; grid-template-areas: 'topbar' 'navigation' 'activity' 'content' 'footer'; min-height: 100dvh; }
+  .shell { display: contents; }
+  .topbar { grid-area: topbar; position: sticky; top: 0; z-index: 20; min-height: 64px; padding-block: 8px; gap: 12px; }
+  .topbar > div:first-of-type { flex: 1; }
+  .topbar .crumb, .topbar .crumb-divider { display: none; }
+  .nav-toggle { display: inline-flex; flex: 0 0 auto; min-height: 44px; padding: 10px 14px; }
+  .nav-toggle[aria-expanded='true'], .nav-toggle[aria-expanded='true']:hover,
+  .nav-toggle[aria-expanded='true']:focus-visible { background: var(--charcoal); color: var(--white); border-color: var(--charcoal); }
+  .sidebar { grid-area: navigation; display: none; position: static; width: 100%; padding: 20px 24px; }
+  .navigation-open .sidebar { display: block; }
+  .sidebar .brand { margin-bottom: 20px; }
+  .sidebar .workspace { display: none; }
+  .navigation { display: block; overflow: visible; padding: 0; }
+  .navigation .nav-label { display: block; max-width: none; margin: 0 0 8px; }
+  .navigation .second-label { margin-top: 20px; }
+  .navigation nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .navigation nav a { white-space: normal; padding: 12px; min-width: 0; }
+  .navigation nav a.active { box-shadow: inset 3px 0 0 var(--accent); }
+  .navigation .nav-count { margin-left: auto; }
+  main { grid-area: content; padding-top: 24px; }
+  footer { grid-area: footer; }
+  #activity-status { grid-area: activity; margin: 16px 24px 0; }
+  .signed-out main { align-self: center; }
+}
+@media (max-width: 620px) {
+  .sidebar { padding: 20px 16px; }
+  .topbar-right #today-label { display: none; }
+  .page-heading .eyebrow { margin-bottom: 8px; }
+  .page-heading h1 { font-size: 32px; line-height: 1.18; }
+  .page-heading .heading-actions { margin-top: 16px; }
+  .event-hub-hero { align-items: stretch; padding: 20px; gap: 16px; }
+  .event-hub-hero h2 { font-size: 20px; }
+  .event-hub-hero p { font-size: 14px; }
+  .event-hub-counts { justify-content: flex-start; gap: 32px; }
+  .event-calendar-item-time { flex-basis: 72px; }
+  .event-calendar-item-body > span { font-size: 13px; }
+  .reminder-row-main { grid-template-columns: minmax(0, 1fr) 44px; }
+  .reminder-remove { width: 44px; }
+  .career-quick-filters select, .career-more-filter-fields input,
+  .reminder-row-main select, .reminder-custom input, .reminder-custom select,
+  .news-eml-field input[type='file'] { font-size: 16px; }
+  #activity-status { margin: 12px 16px 0; }
+}
+@media (max-width: 380px) {
+  .navigation nav { grid-template-columns: minmax(0, 1fr); }
+}
+@media (forced-colors: active) {
+  .navigation nav a.active, .event-filter.is-selected, .career-job-row.is-selected,
+  .event-calendar-day.is-selected { border: 2px solid Highlight; }
+  #toast, #activity-status { border: 1px solid CanvasText; }
+  #toast :focus-visible { outline-color: Highlight; }
 }
