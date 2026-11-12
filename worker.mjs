@@ -10,6 +10,7 @@ import { pollSharedTelegram, pruneSharedMetadata } from './lib/telegram.mjs';
 import { loadSecurityConfig } from './lib/security.mjs';
 import { pruneExpiredAuthRecords } from './lib/auth.mjs';
 import {scheduleDailyBriefing} from './lib/daily-briefing.mjs';
+import {scheduleDailyEmail} from './lib/daily-email.mjs';
 import {scheduleCampusSync} from './lib/campus-schedule.mjs';
 import {pruneExpiredNewEventFlow} from './lib/newevent-telegram.mjs';
 import {pruneExpiredInvitationFlow} from './lib/invitation-telegram.mjs';
@@ -64,6 +65,7 @@ async function scheduler() {
           for(const r of await store.all('reminders'))if(r.status==='sending'&&Date.parse(r.sendingAt||0)<Date.now()-120000)await store.compareAndSet('reminders',r.id,r,{...r,status:'needs-review'});
           if(await store.get('secrets','telegram'))await reminderQueue.enqueue(userId,'reminders',{}, {idempotencyKey:`tick:${Math.floor(Date.now()/15000)}`,priority:100,retrySafe:false,maxAttempts:1});
           await scheduleDailyBriefing(store,reminderQueue).catch(()=>{});
+          await scheduleDailyEmail(store,reminderQueue).catch(()=>{});
           if(checkLinkedIn)await scheduleLinkedInRefresh(store,reminderQueue).catch(()=>{});
           const slack=await store.get('secrets','slack'), health=await store.get('settings','slackHealth');
           if(slack?.channel&&Date.parse(health?.lastSuccess||0)<Date.now()-15*60000)await modelQueue.enqueue(userId,'slack-sync',{}, {idempotencyKey:`slack:${Math.floor(Date.now()/900000)}`,retrySafe:false,maxAttempts:1}).catch(()=>{});
