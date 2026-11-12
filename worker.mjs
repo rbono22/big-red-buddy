@@ -11,6 +11,7 @@ import { pruneExpiredAuthRecords } from './lib/auth.mjs';
 import {scheduleDailyBriefing} from './lib/daily-briefing.mjs';
 import {scheduleCampusSync} from './lib/campus-schedule.mjs';
 import {pruneExpiredNewEventFlow} from './lib/newevent-telegram.mjs';
+import {pruneExpiredInvitationFlow} from './lib/invitation-telegram.mjs';
 import {jobMatchingFingerprint} from './lib/job-discovery.mjs';
 import {pruneNews} from './lib/news.mjs';
 import {scheduleLinkedInRefresh} from './lib/linkedin-refresh.mjs';
@@ -50,8 +51,10 @@ async function scheduler() {
         lastSchedule=Date.now();
         const checkLinkedIn=Date.now()-lastLinkedIn>15*60000;if(checkLinkedIn)lastLinkedIn=Date.now();
         for(const userId of await db.listUserIds()) {
-          if (!await pilotWorkAllowed(db, userId)) continue;
           const store=db.forUser(userId);if((await store.get('settings','account'))?.deleting)continue;
+          // Retention cleanup also runs after pilot access is revoked.
+          await pruneExpiredInvitationFlow(store).catch(()=>{});
+          if (!await pilotWorkAllowed(db, userId)) continue;
           const newsRetention=await store.get('settings','newsRetention');
           if(!newsRetention?.lastRun||Date.parse(newsRetention.lastRun)<Date.now()-86400000){await pruneNews(store);await store.put('settings','newsRetention',{lastRun:new Date().toISOString()});}
           await pruneExpiredNewEventFlow(store).catch(()=>{});

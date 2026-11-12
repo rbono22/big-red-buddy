@@ -1,6 +1,17 @@
-# Syllabus and schedule photos in Telegram
+# Invitations, syllabi, and schedule photos in Telegram
 
 First sign into BRB, connect your own Google Calendar, and link your own private Telegram chat under Connections. All students use the same bot with separate account ownership.
+
+## Invitation screenshots
+
+1. Send `/invite`, then attach a clear screenshot of a Luma, Partiful, SMS, or WhatsApp invitation. You can also put `invite` in the photo caption. An unlabelled image outside an active upload flow offers an **Event invitation** button.
+2. BRB reads the screenshot with local OCR and the private model. It checks the public event page when an actual Luma/Partiful URL is visible in the screenshot or caption. A picture of an “RSVP” button does not contain its hidden link; paste the original link in the caption if you want it saved.
+3. Reply to any missing-detail questions, then check the title, exact date including year, New York start time, duration, and location. Use the edit buttons to correct a detail.
+4. Tap **Add to Google Calendar** to save and queue synchronization to your connected BRB calendar. Without a Google connection, you can save to your BRB schedule and connect Google later. Calendar synchronization and reminders require the host and workers to be online.
+
+The bot retains a bounded event excerpt and the confirmed details, not a permanent screenshot file. Temporary local OCR files are removed after processing; Telegram still processes the photo you send. Drafts and their buttons expire. No RSVP, registration, payment, or invitation to other people is submitted. Use the original event link to register. Reminders follow your event notification preferences.
+
+The upload window lasts 15 minutes and an unconfirmed review lasts 30 minutes. Interrupted saves retain their pending details for at most 24 hours so they can recover; cleanup preserves any event already saved. Encrypted queue payloads follow the existing 24-hour cleanup window. Retention cleanup continues even if pilot access is revoked.
 
 ## Syllabus photos on the website
 
@@ -24,6 +35,6 @@ Send `/enrollment FA26` or `/enrollment SP27`, then attach the Cornell enrollmen
 
 Reply `/confirm CODE 1 3`, using the bot's actual code and your enrolled class numbers. Dropped and waitlisted classes must not be selected. Google Calendar sync is queued after confirmation when connected.
 
-Switching to `/enrollment` or `/resume_upload` exits syllabus mode; `/syllabus` exits resume-upload mode. Unlabelled attachments retain the existing enrollment behavior when no upload mode is active. Explicit commands avoid ambiguity.
+Switching to `/enrollment`, `/resume_upload`, or `/invite` exits syllabus mode; `/syllabus` exits resume-upload mode. Use an explicit upload command to switch purpose. Unlabelled images outside an active mode offer a purpose chooser so invitations are not treated as class schedules.
 
 Enable school notifications in Connections to receive reminders. Default timing is ten minutes before classes, and 24 hours/four hours before deadlines; students can edit it. Calendar writing and reminders require the host and workers to remain available.
