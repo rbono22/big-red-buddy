@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {randomBytes} from 'node:crypto';
+import {setTimeout as delay} from 'node:timers/promises';
 import {Pool} from 'pg';
 import {openDatabase} from '../lib/database.mjs';
 import {createQueue} from '../lib/queue.mjs';
@@ -48,6 +49,19 @@ test('real PostgreSQL runtime roles, FORCE RLS, atomic queue concurrency and lea
   await q.enqueue('expiry','chat',{});const expiring=await q.claim('expiry',{types:['chat']});await ownerPool.query("UPDATE dabas.jobs SET lease_until=now()-interval '1 second',expires_at=now()-interval '1 second' WHERE id=$1",[expiring.id]);assert.equal(await q.claim('expiry-recovery',{types:['chat']}),null);assert.equal((await q.get('expiry',expiring.id)).status,'failed');await q.claim('expiry-cleanup',{types:['chat']});assert.equal(await q.get('expiry',expiring.id),null);
  } finally {
   if(q)await q.close();if(db)await db.close();if(runtimePool)await runtimePool.end();if(ownerPool)await ownerPool.end();
-  await admin.query(`DROP DATABASE IF EXISTS ${name} WITH(FORCE)`);for(const role of [app,worker,owner])await admin.query(`DROP ROLE IF EXISTS ${role}`);await admin.end();
+  try {
+   // pg Pool.end() can resolve before PostgreSQL observes every socket close.
+   // FORCE can kill those closing backends and emit late idle-client errors.
+   // Wait for a clean drain, then use a normal DROP so real leaks still fail.
+   const deadline=Date.now()+5000;let connections;
+   do {
+    connections=Number((await admin.query('SELECT count(*) AS count FROM pg_stat_activity WHERE datname=$1',[name])).rows[0].count);
+    if(!connections)break;
+    await delay(20);
+   }while(Date.now()<deadline);
+   assert.equal(connections,0,'all test database clients must disconnect before teardown');
+   await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+   for(const role of [app,worker,owner])await admin.query(`DROP ROLE IF EXISTS ${role}`);
+  } finally {await admin.end();}
  }
 });

@@ -119,6 +119,18 @@ test('real PostgreSQL worker processes preserve reminders during blocked generat
   blocked=false;for(const res of heldResponses)respond(res);
   await Promise.all(children.map(child=>stop(child)));if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
   if(queue)await queue.close();if(db)await db.close();if(ownerPool)await ownerPool.end();
-  await admin.query(`DROP DATABASE IF EXISTS ${name} WITH(FORCE)`);for(const role of [app,worker,owner])await admin.query(`DROP ROLE IF EXISTS ${role}`);await admin.end();await rm(directory,{recursive:true,force:true});
+  try {
+   // Pool.end() may resolve before PostgreSQL sees the final socket close.
+   // Drain normally; forcing backend termination can emit late client errors.
+   const deadline=Date.now()+5000;let connections;
+   do {
+    connections=Number((await admin.query('SELECT count(*) AS count FROM pg_stat_activity WHERE datname=$1',[name])).rows[0].count);
+    if(!connections)break;
+    await delay(20);
+   }while(Date.now()<deadline);
+   assert.equal(connections,0,'all worker test database clients must disconnect before teardown');
+   await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+   for(const role of [app,worker,owner])await admin.query(`DROP ROLE IF EXISTS ${role}`);
+  } finally {await admin.end();await rm(directory,{recursive:true,force:true});}
  }
 });
