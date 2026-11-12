@@ -31,7 +31,7 @@ import { openDatabase } from './lib/database.mjs';
 import { createQueue } from './lib/queue.mjs';
 import { createAuth } from './lib/auth.mjs';
 import { createSlackAuth } from './lib/slack-auth.mjs';
-import { loadSecurityConfig, applySecurityHeaders, enforceRequestHost, enforceRequestOrigin, RateLimiter, clientIP, safeError, HttpError } from './lib/security.mjs';
+import { loadSecurityConfig, applySecurityHeaders, enforceRequestHost, enforceRequestOrigin, RateLimiter, clientIP, safeError, HttpError, createJsonBodyReader } from './lib/security.mjs';
 import { TZ, idFor, normalizeEvent, calendarICS, localISO } from './lib/domain.mjs';
 import { persistCandidates } from './lib/ingest.mjs';
 import { audit, nowISO, jsonFetch, reconcileReminders } from './lib/integrations.mjs';
@@ -78,8 +78,15 @@ const limiter = new RateLimiter({
     limit: 8
   });
 const adminEmails = String(process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-let readingBodies = 0;
+const bodyOwners = new WeakMap(), readJsonBody = createJsonBodyReader();
+function closeRequestAfterResponse(req, res) {
+  if (!req || res.destroyed) return;
+  res.shouldKeepAlive = false;
+  if (!res.headersSent) res.setHeader('Connection', 'close');
+  res.once('finish', () => req.destroy());
+}
 function json(res, status, value) {
+  if (res.req && !res.req.complete) closeRequestAfterResponse(res.req, res);
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store'
@@ -93,28 +100,7 @@ function redirect(res, target) {
   res.end();
 }
 async function body(req) {
-  if (!String(req.headers['content-type'] || '').startsWith('application/json')) throw new HttpError(415, 'Send application/json.');
-  if (readingBodies >= 3) throw new HttpError(429, 'Uploads are busy. Please retry shortly.');
-  readingBodies++;
-  let size = 0;
-  const chunks = [];
-  try {
-    for await (const c of req) {
-      size += c.length;
-      if (size > 17 * 1024 * 1024) throw new HttpError(413, 'Upload limit is 12 MB per file.');
-      chunks.push(c);
-    }
-    let result;
-    try {
-      result = JSON.parse(Buffer.concat(chunks).toString() || '{}');
-    } catch {
-      throw new HttpError(400, 'Invalid JSON.');
-    }
-    if (!result || typeof result !== 'object' || Array.isArray(result)) throw new HttpError(400, 'Expected an object.');
-    return result;
-  } finally {
-    readingBodies--;
-  }
+  return readJsonBody(req, {owner: bodyOwners.get(req) || `ip:${clientIP(req)}`});
 }
 function safeLink(value) {
   try {
@@ -295,6 +281,7 @@ async function route(req, res) {
   const session = await auth.authenticate(req),
     user = session.user,
     store = database.forUser(user.id);
+  bodyOwners.set(req, `student:${user.id}`);
   limiter.check(user.id);
   if (!['GET', 'HEAD'].includes(req.method)) auth.requireCSRF(req, session);
   if (p === '/auth/logout' && req.method === 'POST') {
@@ -978,6 +965,8 @@ const server = http.createServer({
   maxHeaderSize: 16384
 }, (req, res) => {
   route(req, res).catch(err => {
+    if (res.destroyed) return;
+    if (err.closeConnection || !req.complete) closeRequestAfterResponse(req, res);
     const result = safeError(err);
     if (err.retryAfter) res.setHeader('Retry-After', err.retryAfter);
     if (!res.headersSent) json(res, result.status, result.body);else res.end();
