@@ -10,7 +10,7 @@ import { assignmentPrompt, calendarDescription } from '../lib/calendar-descripti
 import { calendarICS, normalizeEvent, icsEscape } from '../lib/domain.mjs';
 import { syncGoogle } from '../lib/integrations.mjs';
 
-const assignment = () => normalizeEvent({id:'deck',kind:'assignment',title:'Economics · PowerPoint presentation',courseName:'Economics',date:'2027-01-15',time:'17:00',status:'approved',sourceName:'Course syllabus',page:3,sourceUrl:'https://example.edu/course',evidence:'Present on inflation. Include 6 slides, two charts, and a five-minute talk.'});
+const assignment = () => normalizeEvent({id:'deck',kind:'assignment',title:'Economics · PowerPoint presentation',courseName:'Economics',date:'2027-01-15',time:'17:00',status:'approved',aiPolicy:'allowed',sourceName:'Course syllabus',page:3,sourceUrl:'https://example.edu/course',evidence:'Present on inflation. Include 6 slides, two charts, and a five-minute talk.'});
 
 test('presentation prompt preserves requirements, requests deck and script, and uses plain provider links',()=>{
   const e=assignment(),description=calendarDescription(e);
@@ -62,4 +62,13 @@ test('Google Calendar receives the same explicit Partiful and Luma registration 
  const original=globalThis.fetch,calls=[];globalThis.fetch=async(url,options)=>{calls.push({url,method:options.method,body:JSON.parse(options.body)});return new Response(JSON.stringify({id:'synthetic-remote-'+calls.length,htmlLink:'https://calendar.google.com/'}));};t.after(()=>globalThis.fetch=original);
  await syncGoogle(store,{eventIds:events.map(event=>event.id)});assert.equal(calls.length,2);
  for(const event of events){const call=calls.find(row=>row.body.description===calendarDescription(event));assert.ok(call);assert.equal(call.method,'PUT');assert.match(call.body.description,/^(RSVP on Partiful|Register on Luma): https:\/\//);assert.match(call.body.description,/does not register you/);}
+});
+
+test('study help is the default prompt, AI-allowed courses get drafting help, and No AI courses get no prompt',()=>{
+  const {aiPolicy,...base}=assignment();
+  const study=assignmentPrompt(base);assert.match(study,/Act as my tutor/);assert.match(study,/do not rewrite it or produce the final answers/);assert.match(study,/study help only/);assert.doesNotMatch(study,/first-draft slide deck|create a first draft/i);
+  assert.match(assignmentPrompt({...base,kind:'quiz'}),/practice quiz/);
+  assert.match(assignmentPrompt({...base,aiPolicy:'allowed'}),/AI-assisted drafting is permitted/);
+  assert.equal(assignmentPrompt({...base,aiPolicy:'none'}),'');assert.doesNotMatch(calendarDescription({...base,aiPolicy:'none'}),/AI STARTER PROMPT/);
+  assert.match(assignmentPrompt({...base,title:'Due: HW4 · NBAY 6170'}),/working on: HW4 · NBAY 6170\./);
 });
