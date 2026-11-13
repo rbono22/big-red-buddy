@@ -1309,3 +1309,13 @@ test('browser handoff tracker rows continue on the safe owned application link w
  const tracker=view.document.querySelector('#application-tracker'),link=[...tracker.querySelectorAll('a')].find(a=>a.textContent==='Continue in my browser');assert.ok(link);assert.equal(link.getAttribute('href'),'/#application-handoff/app:fixture_1');assert.match(tracker.textContent,/Finish and submit on the employer’s page\. BRB has not confirmed a submission/);assert.doesNotMatch(tracker.textContent,/Continue in Telegram with/);assert.equal(tracker.querySelector('[data-action="application-tracker-status"]'),null);
  fixture.applicationTracker[0].liveApplicationId='unsafe?token=private';const invalid=await renderDesignFixture(fixture);invalid.navigate('careers');assert.equal(Boolean(invalid.document.querySelector('#application-tracker a[href*="application-handoff"]')),false);assert.doesNotMatch(invalid.document.querySelector('#application-tracker').innerHTML,/token=private/);
 });
+
+test('Resume & profile shows application autopilot with plain consequences and saves each switch explicitly',async()=>{
+ const fixture=careerBrowserFixture();fixture.careerProfile={...(fixture.careerProfile||{}),applicationAutopilot:{consents:false,answers:false,authorizedAt:null}};
+ const view=await renderDesignFixture(fixture,{'/api/career/autopilot':{consents:true,answers:false,authorizedAt:'2026-11-13T15:00:00.000Z'}});view.navigate('careers');
+ clickUI(view,'[data-action="career-tab"][data-tab="profile"]');
+ const panel=view.document.querySelector('#application-autopilot');assert.ok(panel);assert.match(panel.textContent,/every consent, certification, acknowledgment, and agreement box/);assert.match(panel.textContent,/responsible for what is submitted/);assert.match(panel.textContent,/Off\. BRB asks you/);
+ const box=view.document.querySelector('#autopilot-consents');assert.equal(box.hasAttribute('checked'),false);box.checked=true;box.dispatchEvent(new view.window.Event('change',{bubbles:true}));await settled();
+ assert.deepEqual(JSON.parse(view.requests.find(r=>r.url==='/api/career/autopilot').options.body),{consents:true});
+ assert.match(view.document.querySelector('#application-autopilot').textContent,/Authorized Nov 13, 2026/);assert.equal(view.document.querySelector('#autopilot-consents').hasAttribute('checked'),true);
+});

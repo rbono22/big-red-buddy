@@ -62,7 +62,7 @@ async function signInScreen(){
   pilotAccessStatus=null;
   coursePicker=emptyCoursePicker();
   enrollment=emptyEnrollment();reminderForm=emptyReminderForm();syllabusUI=emptySyllabusUI();academicMode='search';academicModeAuto=false;canvasUI=emptyCanvasUI();
-  careerUI=emptyCareerUI();demographicsUI=emptyDemographicsUI();
+  careerUI=emptyCareerUI();demographicsUI=emptyDemographicsUI();autopilotUI={saving:false,error:'',notice:''};
   applicationTrackerUI=emptyApplicationTrackerUI();
   savedAnswersUI=emptySavedAnswersUI();
   jobSearchUI=emptyJobSearchUI();experienceUI=emptyExperienceUI();linkedInUI=emptyLinkedInUI();careerBrowserUI=emptyCareerBrowserUI();jobRecency='week';
@@ -673,7 +673,24 @@ function applicationHandoff(){
  const application=state.applicationTracker?.find(row=>row.liveApplicationId===match[1]),uncertain=application?.liveApplicationStatus==='uncertain';
  return `${heading('YOUR APPLICATION, READY TO CONTINUE','Continue in your browser','Use the BRB browser helper to fill your saved answers on the employer’s application.')}<section id="application-handoff" class="panel" aria-labelledby="application-handoff-heading"><div class="panel-body">${uncertain?'<p class="course-error" role="alert"><strong>Previous submission unconfirmed.</strong> A prior attempt may have reached the employer. Check for an employer confirmation before submitting again. The helper only fills the form; it does not retry or submit.</p>':''}<h2 id="application-handoff-heading">Fill your application in Chrome</h2><ol><li><strong>Stay on this BRB page</strong> in desktop Chrome, signed in to your account.</li><li>Click the <strong>B helper icon</strong> in Chrome’s toolbar. If it is hidden, open the puzzle-piece Extensions menu and select <strong>Big Red Buddy – Application Helper</strong>.</li><li>Click <strong>Open and fill application</strong>. The helper opens a new employer tab and fills your saved details and documents.</li></ol><p>Opening the employer’s link by itself shows a blank form. Start the helper from this BRB tab.</p><details><summary>Install or update the browser helper</summary><ol><li><a href="/browser-helper.zip" download="BRB-browser-helper.zip">Download the BRB browser helper</a> and unzip it.</li><li>Open <code>chrome://extensions</code> in Chrome and turn on <strong>Developer mode</strong>.</li><li>Click <strong>Load unpacked</strong> and select the extracted folder containing <code>manifest.json</code>.</li><li>If the helper is already installed, replace its folder with the new download, then click its reload arrow on <code>chrome://extensions</code>. Check that it shows <strong>version 0.1.1</strong>.</li><li>Return to this page and follow the steps above.</li></ol></details><p>Complete any remaining questions and submit on the employer’s page. The helper does not click Submit.</p><div class="form-actions"><a class="button secondary" href="#career-profile">Resume &amp; profile</a><a class="button quiet" href="#careers">Back to Career studio</a></div></div></section>`;
 }
-function careerToolsView(){return `${careerProfileView()}${demographicsView()}${savedApplicationAnswersView()}${resumeReviewView()}${experienceView()}${linkedinView()}`;}
+let autopilotUI={saving:false,error:'',notice:''};
+function autopilotView(){
+ const a=state.careerProfile?.applicationAutopilot||{consents:false,answers:false,authorizedAt:null},ui=autopilotUI;
+ const since=a.authorizedAt&&Number.isFinite(Date.parse(a.authorizedAt))?new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'short'}).format(new Date(a.authorizedAt)):'';
+ const toggle=(key,title,body)=>`<div class="autopilot-choice"><label class="checkbox-control" for="autopilot-${key}"><input id="autopilot-${key}" type="checkbox" data-autopilot="${key}" ${a[key]?'checked':''} ${ui.saving?'disabled':''}><span><strong>${title}</strong></span></label><p class="form-help">${body}</p></div>`;
+ return `<section id="application-autopilot" class="panel" aria-labelledby="autopilot-heading"><div class="panel-head"><h2 id="autopilot-heading">Application autopilot<span class="sub">Fewer questions when you tap Apply in Telegram</span></h2><span class="tag ${a.consents||a.answers?'green':''}">${a.consents||a.answers?'ON':'OFF'}</span></div><div class="panel-body">
+ ${toggle('consents','Accept consent, certification, and acknowledgment checkboxes for me','BRB will tick <strong>every</strong> consent, certification, acknowledgment, and agreement box on employer forms, including legal certifications such as “I certify this information is accurate” and privacy or data-processing notices. You are responsible for what is submitted in your name. Each receipt lists the boxes accepted for you. A saved SMS or WhatsApp choice still applies.')}
+ ${toggle('answers','Let BRB answer new application questions for me','BRB answers new questions using your résumé and answers you saved before, then remembers them for next time. You can review and edit saved answers below.')}
+ <div id="autopilot-status" role="status" aria-live="polite">${ui.error?`<p class="course-error">${esc(ui.error)}</p>`:''}${ui.notice?`<p>${esc(ui.notice)}</p>`:''}${since?`<p class="form-help">Authorized ${esc(since)} New York time. Turn both off to revoke.</p>`:'<p class="form-help">Off. BRB asks you for these in Telegram.</p>'}</div></div></section>`;
+}
+async function saveAutopilot(key,value){
+ const ui=autopilotUI;if(ui.saving||!['consents','answers'].includes(key))return;ui.saving=true;ui.error='';ui.notice='';refreshAutopilot();
+ try{const result=await api('/api/career/autopilot',{[key]:value});if(autopilotUI!==ui)return;state.careerProfile={...(state.careerProfile||{}),applicationAutopilot:result};ui.notice=value?'Saved. BRB will use this on your next Apply.':'Turned off. BRB will ask you again.';}
+ catch(error){if(autopilotUI===ui)ui.error=error.message;}
+ finally{ui.saving=false;if(autopilotUI===ui)refreshAutopilot(`autopilot-${key}`);}
+}
+function refreshAutopilot(focusId){const element=$('#application-autopilot');if(!element)return;element.outerHTML=autopilotView();if(focusId)document.getElementById(focusId)?.focus();}
+function careerToolsView(){return `${careerProfileView()}${autopilotView()}${demographicsView()}${savedApplicationAnswersView()}${resumeReviewView()}${experienceView()}${linkedinView()}`;}
 function refreshCareerTools(focusId){refreshCareerWorkspace(focusId);}
 function careerFormData(form){return Object.fromEntries(new FormData(form));}
 function captureCareerQuestion(){const form=$('#career-question-form');if(form)Object.assign(careerUI.questionDraft,careerFormData(form));}
@@ -1024,6 +1041,7 @@ document.addEventListener('input',event=>{const applicationForm=event.target.clo
 $('#syllabus-file').addEventListener('change',e=>{void uploadSyllabus(e.target.files[0]);e.target.value='';});
 $('#syllabus-camera').addEventListener('change',e=>{void uploadSyllabus(e.target.files[0]);e.target.value='';});
 document.addEventListener('change',e=>{if(e.target.id==='syllabus-term'&&!syllabusUI.pending)syllabusUI.term=e.target.value;});
+document.addEventListener('change',e=>{const key=e.target.dataset?.autopilot;if(key)saveAutopilot(key,e.target.checked);});
 document.addEventListener('change',e=>{if(e.target.id!=='canvas-email-toggle')return;const enabled=e.target.checked;canvasRequest('/api/canvas/email',{enabled},enabled?{queued:true}:{success:'Stopped watching Canvas emails. Items already moved stay as they are.',focus:'canvas-email-toggle'});});
 document.addEventListener('change',e=>{const code=e.target.dataset?.canvasCourse;if(!code)return;const policy=e.target.value,label=(aiPolicyOptions.find(([value])=>value===policy)||[])[1]||policy;canvasRequest('/api/canvas/policy',{courseCode:code,policy},{success:`${code}: ${label}. Approved deadlines update in Google Calendar on the next sync.`,focus:e.target.id});});
 $('#resume-file').addEventListener('change',e=>action(()=>upload(e.target.files[0],'resume')));
