@@ -53,5 +53,41 @@ try{
  }});assert.equal(await letterPage.evaluate(()=>window.submissions),1);await letterPage.close();
  const missingLetter=await coverFixture();await assert.rejects(submitGreenhousePage(missingLetter,{...letterInput,coverLetter:undefined}),/INVALID_COVER_LETTER/);assert.equal(await missingLetter.evaluate(()=>window.submissions),0);await missingLetter.close();
  const changedResume=await coverFixture({replaceResume:true});await assert.rejects(submitGreenhousePage(changedResume,letterInput),/FIELD_CHANGED_AFTER_UPLOAD/);assert.equal(await changedResume.evaluate(()=>window.submissions),0);await changedResume.close();
- assert.equal(requests,0);console.log('Passed Greenhouse browser contract: all controls, multiple choices, exact location, PDF upload, optional skips, consent, receipt, changed form, autofill, conditional fields, CAPTCHA, revoked authorization, one final click. Zero external requests.');
+
+ // Embeddable form with multi-answer questions: grouped checkboxes and an async
+ // multi-select, both using question_N[] ids, plus an optional checkbox group.
+ const embedURL='https://job-boards.greenhouse.io/embed/job_app?for=example&token=123';
+ const multiMarkup=await readFile(new URL('../tests/fixtures/greenhouse-synthetic-embed-multi.html',import.meta.url),'utf8');
+ async function multiPage(mode='success'){
+  const page=await context.newPage();page.setDefaultTimeout(2000);
+  await page.route(embedURL,route=>route.fulfill({contentType:'text/html',body:multiMarkup}));
+  await page.goto(embedURL);
+  await page.evaluate(mode=>{
+   window.submissions=0;
+   const input=document.getElementById('question_200[]'),close=()=>{document.querySelectorAll('[role=option]').forEach(e=>e.remove());input.setAttribute('aria-expanded','false');};
+   // Options load asynchronously after the menu opens, like Greenhouse's react-select.
+   const open=()=>{close();input.setAttribute('aria-expanded','true');setTimeout(()=>{for(const label of ['New York','Boston','Denver']){const option=document.createElement('div');option.setAttribute('role','option');option.textContent=label;option.onclick=()=>{const selected=document.createElement('span');selected.className='select__multi-value__label';selected.textContent=label;input.closest('.select__value-container').prepend(selected);input.value='';close();};document.body.append(option);}},150);};
+   input.addEventListener('click',open);input.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
+   if(mode==='preselected')document.getElementById('question_300[]_2').checked=true;
+   document.getElementById('resume').addEventListener('change',e=>{const span=document.createElement('span');span.textContent=e.target.files[0].name;e.target.parentElement.append(span);if(mode==='uncheck-after-upload')document.getElementById('question_100[]_2').checked=false;});
+   document.querySelector('button[type=submit]').onclick=e=>{e.preventDefault();window.submissions++;document.getElementById('application-form').remove();const heading=document.createElement('h2');heading.textContent='Thank you for applying!';document.body.append(heading);};
+  },mode);return page;
+ }
+ const multi=await multiPage(),multiForm=await readGreenhouseForm(multi);
+ assert.equal(multiForm.title,'Example Strategist');
+ const countries=multiForm.fields.find(f=>f.key==='question_100[]'),cities=multiForm.fields.find(f=>f.key==='question_200[]'),groups=multiForm.fields.find(f=>f.key==='question_300[]');
+ assert.deepEqual({type:countries.type,multiple:countries.multiple,required:countries.required,label:countries.label,options:countries.options},{type:'checkbox',multiple:true,required:true,label:'Which countries could you work in?',options:['United States','Canada','Ireland']});
+ assert.deepEqual({widget:cities.widget,multiple:cities.multiple,options:cities.options},{widget:'combobox',multiple:true,options:['New York','Boston','Denver']});
+ assert.equal(groups.required,false);assert.equal(multiForm.fields.length,6,'each checkbox group is one field');
+ const multiAnswers={first_name:{reviewed:true,value:'Synthetic'},email:{reviewed:true,value:'synthetic@example.org'},_systemfield_resume:{reviewed:true,value:'Synthetic.pdf'},'question_100[]':{reviewed:true,value:'United States\nCanada'},'question_200[]':{reviewed:true,value:'New York\nDenver'},'question_300[]':{reviewed:true,value:null}};
+ const multiInput={...input,url:embedURL,form:multiForm,answers:multiAnswers};
+ await submitGreenhousePage(multi,{...multiInput,beforeSubmit:async()=>{
+  assert.deepEqual(await multi.evaluate(()=>[...document.querySelectorAll('input[name="question_100[]"]')].map(e=>e.checked)),[true,true,false]);
+  assert.deepEqual(await multi.evaluate(()=>[...document.querySelectorAll('.select__multi-value__label')].map(e=>e.textContent).sort()),['Denver','New York']);
+ }});assert.equal(await multi.evaluate(()=>window.submissions),1);await multi.close();
+ for(const [mode,answerPatch,error] of [['success',{'question_100[]':{reviewed:true,value:'Germany'}},'INVALID_CHOICE'],['preselected',{},'FIELD_CHANGED_AFTER_UPLOAD'],['uncheck-after-upload',{},'FIELD_CHANGED_AFTER_UPLOAD']]){
+  const page=await multiPage(mode);await assert.rejects(submitGreenhousePage(page,{...multiInput,answers:{...multiAnswers,...answerPatch}}),new RegExp(error));assert.equal(await page.evaluate(()=>window.submissions),0);await page.close();
+ }
+ const multiChanged=await multiPage();await multiChanged.evaluate(()=>document.querySelector('label[for="question_100[]_3"]').textContent='Mexico');await assert.rejects(submitGreenhousePage(multiChanged,multiInput),/FORM_CHANGED/);assert.equal(await multiChanged.evaluate(()=>window.submissions),0);await multiChanged.close();
+ assert.equal(requests,0);console.log('Passed Greenhouse browser contract: all controls, multiple choices, embed form with grouped checkboxes and async multi-select ([] ids), exact location, PDF upload, optional skips, consent, receipt, changed form, autofill, conditional fields, CAPTCHA, revoked authorization, one final click. Zero external requests.');
 }finally{await browser.close();}

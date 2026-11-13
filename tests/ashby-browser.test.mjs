@@ -81,3 +81,10 @@ test('Ashby never replaces a missing cover letter with the saved resume',async()
  const f=uploadFixture(),resume={name:'Resume.pdf',file:Buffer.from('%PDF-1.7 resume').toString('base64')};
  await assert.rejects(fillAshbyApplication(f.page,f.form,{_systemfield_resume:{value:resume.name,reviewed:true},cover:{value:'Cover Letter.pdf',reviewed:true}},resume));assert.equal(f.uploads.length,0);
 });
+
+test('Ashby checkbox groups: an omitted optional group passes only when nothing is preselected',async()=>{
+ const group=checked=>`<fieldset class="ashby-application-form-input-checkbox-group"><div class="ashby-application-form-input-checkbox-group-option"><input type="checkbox" id="a"${checked?' checked':''}><label for="a">Group A</label></div><div class="ashby-application-form-input-checkbox-group-option"><input type="checkbox" id="b"><label for="b">Group B</label></div></fieldset>`;
+ const run=checked=>{const {page,form}=fixture('checkbox',group(checked));Object.assign(form.fields[0],{multiple:true,options:['Group A','Group B']});return fillAshbyApplication(page,form,omit);};
+ await run(false);
+ await assert.rejects(run(true),/UNREVIEWED_DEFAULT/);
+});
