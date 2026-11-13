@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {createApplicationHandoff,redeemApplicationHandoff} from '../lib/application-handoff.mjs';
+import {canCreateApplicationHandoff,createApplicationHandoff,redeemApplicationHandoff} from '../lib/application-handoff.mjs';
 import {getCareerProfile,saveCareerProfile} from '../lib/career.mjs';
 import {saveApplicationAnswerMemory,suggestSavedApplicationAnswer} from '../lib/application-answer-memory.mjs';
 import {executeLiveApplication} from '../lib/live-applications.mjs';
@@ -16,6 +16,55 @@ async function fixture(){
  const a={id:'app',jobId:'job',title:'Analyst',company:'Example',provider:'lever',url,revision:2,status:'collecting',chatId:'101',linkedAt:'one',resumeHash:hash(file),profileHash:hash(await getCareerProfile(s)),form:{title:'Analyst',fields},answers:{_systemfield_resume:{value:'Resume.pdf',reviewed:true},name:{value:'Alex Example',reviewed:true},missing:{value:'UNREVIEWED_DRAFT',reviewed:false},optional:{value:null,reviewed:true}},drafts:{missing:{value:'PRIVATE_DRAFT'}},privateSecret:'never exported'};
  await s.put('liveApplications','app',a);return {s,a};
 }
+test('handoff readiness reads only and returns no answers or token',async()=>{
+ const {s,a}=await fixture(),token={id:'expired',expiresAt:0,usedAt:null};await s.put('applicationHandoffs',token.id,token);
+ const readOnly={...s,put:()=>assert.fail('Readiness must not write'),delete:()=>assert.fail('Readiness must not prune tokens'),compareAndSet:()=>assert.fail('Readiness must not claim tokens'),all:()=>assert.fail('Readiness must not inspect token records')};
+ assert.equal(await canCreateApplicationHandoff(readOnly,{applicationId:'app'}),true);
+ assert.equal(await canCreateApplicationHandoff(readOnly,{applicationId:'app',revision:2}),true);
+ assert.deepEqual(await s.get('liveApplications','app'),a);assert.deepEqual(await s.all('applicationHandoffs'),[token]);
+});
+test('handoff readiness requires the current tenant application and requested revision',async()=>{
+ const {s}=await fixture();
+ for(const input of [{},{applicationId:'missing'},{applicationId:'../app'},{applicationId:'app',revision:1},{applicationId:'app',revision:null},{applicationId:'app',revision:'2'}])assert.equal(await canCreateApplicationHandoff(s,input),false);
+ assert.equal(await canCreateApplicationHandoff(store('other'),{applicationId:'app'}),false);
+});
+test('handoff readiness permits partial forms and uncertain recovery but never active or completed submissions',async()=>{
+ for(const status of ['collecting','ready','needs_attention','browser_handoff','uncertain','queued','submitting','submitted','inspecting','cancelled']){
+  const {s,a}=await fixture(),attempt=status==='uncertain'?{submitAttemptAt:'2026-11-13T04:14:37.069Z'}:{};await s.put('liveApplications','app',{...a,status,...attempt});
+  assert.equal(await canCreateApplicationHandoff(s,{applicationId:'app'}),['collecting','ready','needs_attention','browser_handoff','uncertain'].includes(status),status);
+ }
+ for(const patch of [{status:'uncertain'},{status:'uncertain',submitAttemptAt:'invalid'},{status:'ready',submitAttemptAt:'2026-11-13T04:14:37.069Z'}]){
+  const {s,a}=await fixture();await s.put('liveApplications','app',{...a,...patch});assert.equal(await canCreateApplicationHandoff(s,{applicationId:'app'}),false);
+ }
+});
+test('handoff readiness refuses missing, empty, malformed, and unsupported forms',async()=>{
+ for(const form of [null,{fields:[]},{fields:[{key:'name',label:'Name',type:'password'}]},{fields:[{key:'salary-proof',label:'Salary proof',type:'file'}]},{fields:[{key:'__proto__',label:'Name',type:'text'}]},{fields:[{key:'name',label:'Name',type:'radio',options:[{}]}]}]){
+  const {s,a}=await fixture();await s.put('liveApplications','app',{...a,form});assert.equal(await canCreateApplicationHandoff(s,{applicationId:'app'}),false);
+ }
+});
+test('handoff readiness hides stale sources, closed jobs, relinked accounts, and deleted accounts',async()=>{
+ for(const change of ['profile','resume','link','deleting','closed','url','title','company']){
+  const {s}=await fixture(),job=await s.get('jobs','job');
+  if(change==='profile')await saveCareerProfile(s,{fullName:'Changed name'});
+  if(change==='resume')await s.put('documents','resume',{name:'New resume.pdf',file:'changed'});
+  if(change==='link')await s.put('secrets','telegram',{chatId:101,linkedAt:'relinked'});
+  if(change==='deleting')await s.put('settings','account',{deleting:true});
+  if(change==='closed')await s.put('jobs','job',{...job,closed:true});
+  if(change==='url')await s.put('jobs','job',{...job,applyUrl:url.replace('/example/','/other/')});
+  if(change==='title')await s.put('jobs','job',{...job,title:'Different role'});
+  if(change==='company')await s.put('jobs','job',{...job,company:'Different company'});
+  assert.equal(await canCreateApplicationHandoff(s,{applicationId:'app'}),false,change);
+  await assert.rejects(createApplicationHandoff(s,{applicationId:'app'}),/expired or the application changed/);
+ }
+});
+test('source identity allows harmless whitespace but empty forms cannot mint a handoff',async()=>{
+ const {s,a}=await fixture();await s.put('jobs','job',{...(await s.get('jobs','job')),title:'  Analyst\n',company:' Example  '});
+ assert.equal(await canCreateApplicationHandoff(s,{applicationId:'app'}),true);await createApplicationHandoff(s,{applicationId:'app'});
+ await s.put('liveApplications','app',{...a,form:{fields:[]}});assert.equal(await canCreateApplicationHandoff(s,{applicationId:'app'}),false);await assert.rejects(createApplicationHandoff(s,{applicationId:'app'}),/expired or the application changed/);
+});
+test('handoff readiness propagates unexpected storage failures',async()=>{
+ const failure=new Error('Database unavailable');await assert.rejects(canCreateApplicationHandoff({get:()=>{throw failure;}},{applicationId:'app'}),error=>error===failure);
+});
 test('same-tenant handoff is one-time and exports reviewed partial answers and the exact PDF only',async()=>{
  const {s}=await fixture(),created=await createApplicationHandoff(s,{applicationId:'app'},{now:1000});assert.match(created.token,/^[a-f0-9]{64}$/);assert.equal(created.url,url);
  assert.ok(!(await s.all('applicationHandoffs')).some(row=>JSON.stringify(row).includes(created.token)));
@@ -126,7 +175,7 @@ test('only a cover letter bound to current resume text, role, and signature is e
   const {s,a,resume,job}=await withCover();
   if(change==='resume-text')await s.put('documents','resume',{...resume,text:'Changed extracted experience in the same PDF.'});
   if(change==='description')await s.put('jobs','job',{...job,description:'Different job requirements.'});
-  if(change==='job')await s.put('jobs','job',{...job,company:'Changed employer'});
+  if(change==='job'){await s.put('jobs','job',{...job,company:'Changed employer'});await assert.rejects(createApplicationHandoff(s,{applicationId:'app'}),/expired or the application changed/);continue;}
   if(change==='signature'){a.coverLetter.profileBinding='stale';await s.put('liveApplications','app',a);}
   if(change==='missing-binding'){delete a.coverLetter.sourceBinding;await s.put('liveApplications','app',a);}
   const created=await createApplicationHandoff(s,{applicationId:'app'}),payload=await redeemApplicationHandoff(s,{token:created.token});

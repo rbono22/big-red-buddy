@@ -3,9 +3,11 @@ import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {createHash} from 'node:crypto';
 import {openDatabase} from '../lib/database.mjs';
 import {createQueue} from '../lib/queue.mjs';
 import {handleCareerMessage} from '../lib/career-telegram.mjs';
+import {getCareerProfile,saveCareerProfile} from '../lib/career.mjs';
 
 async function setup(t){
   const dir=await mkdtemp(path.join(tmpdir(),'brf-career-telegram-'));
@@ -24,6 +26,12 @@ async function setup(t){
   return {db,queue,a,b,send,jobs,payload};
 }
 const pdf={file_id:'telegram-fixture-file',file_size:1024,mime_type:'application/pdf',file_name:'resume.pdf'};
+async function handoffFixture(s){
+ const url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply',resume={name:'Resume.pdf',file:Buffer.from('%PDF-1.7 synthetic').toString('base64'),text:'Synthetic student'};
+ const hash=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
+ await s.a.put('jobs','job-a',{id:'job-a',title:'Analyst',company:'Example',applyUrl:url});await s.a.put('documents','resume',resume);
+ return {id:'application-a',jobId:'job-a',url,title:'Analyst',company:'Example',provider:'lever',chatId:'101',linkedAt:'',status:'ready',revision:1,resumeHash:hash(resume.file),profileHash:hash(await getCareerProfile(s.a)),form:{fields:[{key:'name',label:'Name',type:'text'}]},answers:{name:{value:'Student',reviewed:true}}};
+}
 
 test('job link uses the owned job application URL without a resume or submission',async t=>{
  const s=await setup(t);await s.a.delete('documents','resume');
@@ -37,10 +45,9 @@ test('job link uses the owned job application URL without a resume or submission
 
 test('job options offer BRB autofill for the bound application without starting or retrying submission',async t=>{
  const before=process.env.APPLICATION_BROWSER_ENABLED;process.env.APPLICATION_BROWSER_ENABLED='true';t.after(()=>{if(before===undefined)delete process.env.APPLICATION_BROWSER_ENABLED;else process.env.APPLICATION_BROWSER_ENABLED=before;});
- const s=await setup(t),url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
- await s.a.put('jobs','job-a',{id:'job-a',title:'Analyst',company:'Example',applyUrl:url});
+ const s=await setup(t),base=await handoffFixture(s),url=base.url;
  for(const [i,status] of ['collecting','ready','browser_handoff','uncertain','queued','submitting','submitted','needs_attention'].entries()){
-  const application={id:'application-a',jobId:'job-a',url,chatId:'101',linkedAt:'',status,revision:i+1,...(status==='needs_attention'?{}:{form:{fields:[{key:'name',label:'Name',type:'text'}]}}),answers:{name:{value:'Student',reviewed:true}},...(status==='uncertain'?{submitAttemptAt:'2026-11-13T04:14:37Z',error:'Receipt unconfirmed'}:{})};
+  const application={...base,status,revision:i+1,...(status==='uncertain'?{submitAttemptAt:'2026-11-13T04:14:37Z',error:'Receipt unconfirmed'}:{})};if(status==='needs_attention')delete application.form;
   await s.a.put('liveApplications',application.id,application);
   await s.send('/job job-a',100+i);await s.send('/job job-a',100+i);
   const messages=await s.jobs();assert.equal(messages.length,i+1);assert.ok(messages.every(j=>j.type==='telegram-send'));
@@ -55,6 +62,24 @@ test('job options offer BRB autofill for the bound application without starting 
   assert.deepEqual(await s.a.get('liveApplications',application.id),application);
  }
  assert.equal((await s.a.all('applicationHandoffs')).length,0);
+});
+
+test('fresh handoff can be requested from Telegram without restarting or submitting an application',async t=>{
+ const before=process.env.APPLICATION_BROWSER_ENABLED;process.env.APPLICATION_BROWSER_ENABLED='true';t.after(()=>{if(before===undefined)delete process.env.APPLICATION_BROWSER_ENABLED;else process.env.APPLICATION_BROWSER_ENABLED=before;});
+ const s=await setup(t),base=await handoffFixture(s),application={...base,status:'uncertain',submitAttemptAt:'2026-11-13T04:14:37Z'};
+ await s.a.put('liveApplications',application.id,application);await s.a.put('settings','liveApplicationFlow',{id:application.id});
+ await s.send('/handoff',300);await s.send('/handoff',300);await s.send('/handoff job-a',301);
+ assert.equal((await s.jobs()).length,2);assert.ok((await s.jobs()).every(j=>j.type==='telegram-send'));
+ for(const message of await s.jobs()){
+  const card=await s.payload(message);assert.match(card.text,/fresh autofill session/);assert.match(card.text,/previous submission attempt has no confirmed receipt/);
+  assert.ok(card.replyMarkup.inline_keyboard[0][0].url.endsWith('/#application-handoff/application-a'));assert.equal(card.liveApplicationRevision,1);
+ }
+ assert.deepEqual(await s.a.get('liveApplications',application.id),application);assert.equal((await s.a.all('applicationHandoffs')).length,0);
+ await assert.rejects(s.send('/handoff job-b',302),/workspace/);
+ assert.equal(await s.send('/handoff',303,{chat:{id:202,type:'private'}}),false);
+ await saveCareerProfile(s.a,{phone:'+12125550123'});await s.send('/handoff',304);
+ const last=(await Promise.all((await s.jobs()).map(s.payload))).find(p=>/not ready/.test(p.text));assert.ok(last);assert.ok(last.replyMarkup.inline_keyboard.flat().every(b=>!String(b.url||'').includes('application-handoff')));
+ assert.deepEqual(await s.a.get('liveApplications',application.id),application);
 });
 
 test('job autofill options do not expose stale chat, changed URL or another tenant application',async t=>{
