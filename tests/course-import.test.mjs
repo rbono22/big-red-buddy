@@ -5,7 +5,7 @@ import { normalizeEvent } from '../lib/domain.mjs';
 import { syncGoogle } from '../lib/integrations.mjs';
 function fixture(){
   const records=new Map(); const key=(b,id)=>`${b}:${id}`;
-  return {async all(b){return [...records].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v));},async get(b,id){return structuredClone(records.get(key(b,id))||null);},async put(b,id,v){records.set(key(b,id),structuredClone(v));return v;},async delete(b,id){records.delete(key(b,id));}};
+  return {userId:'course-fixture',async all(b){return [...records].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v));},async get(b,id){return structuredClone(records.get(key(b,id))||null);},async put(b,id,v){records.set(key(b,id),structuredClone(v));return v;},async delete(b,id){records.delete(key(b,id));},async putIfAbsent(b,id,v){if(!records.has(key(b,id)))records.set(key(b,id),structuredClone(v));return structuredClone(records.get(key(b,id)));},async compareAndSet(b,id,before,after){if(JSON.stringify(records.get(key(b,id))||null)!==JSON.stringify(before))return false;records.set(key(b,id),structuredClone(after));return true;}};
 }
 function selection(){return {source:{id:'catalog-source',name:'NBAY 5300 catalog',url:'https://www.cornelltech.tech/catalogue.json'},course:{id:'NBAY-5300',code:'NBAY 5300'},section:{id:'section-1'},warnings:[],skipped:0,events:[normalizeEvent({id:'catalog-meeting',title:'NBAY 5300 · Finance',kind:'class',date:'2026-11-16',time:'13:25',endTime:'14:40',location:'Tata L23',evidence:'Published meeting schedule',evidenceVerified:true,status:'approved'})]};}
 test('course selection reuses an existing syllabus class and its Google ID; repeated clicks do not duplicate reminders',async()=>{

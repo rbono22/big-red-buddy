@@ -44,7 +44,7 @@ For a fresh checkout, start from `.env.example`. Production startup requires HTT
 
 1. Sign in with a verified `@cornell.edu` Google account from Cornell's Workspace. The pilot additionally requires an invitation in the server's email allowlist.
 2. Upload their own syllabus and resume. Review extracted dates and resolve missing times.
-3. Connect their own Google Calendar with separate OAuth consent. The app writes only to its dedicated app-created calendar.
+3. Connect their own Google Calendar with separate OAuth consent. Additions and updates use its dedicated app-created calendar. Removing an event from another selected, writable calendar requires a separate optional editing grant and Telegram confirmation.
 4. Link their private Telegram chat through a short-lived, single-use link. **One shared bot serves everyone. Students do not create bots.**
 5. Authorize their own Slack account and choose a channel they belong to. Membership is checked again when reading history.
 6. Set target job titles, fetch employer postings, and review resume-grounded application drafts.
@@ -239,6 +239,12 @@ Full newsletter bodies and supporting excerpts are not stored as permanent recor
 ### Telegram menu and guided actions
 
 Send `menu` or `/menu` for **My day**, **Add something**, **Jobs**, **Events**, and **Settings**. A setup checklist guides Cornell sign-in/linking, Google authorization, resume upload, class imports, and notification choices. Local OCR suggests an unlabelled PDF/photo's purpose before the student chooses its route and term. Routine reminder and personal-event move phrases create explicit confirmation proposals. Reminder and job notifications carry scoped action buttons; calendar work reports provider-confirmed completion or recovery options. Employer application preparation remains distinct from actual employer submission. See [Telegram menu instructions and supported phrases](docs/telegram-documents.md#menu-and-everyday-changes).
+
+### Remove calendar events in Telegram
+
+Choose **Events → Remove an event**, tap **Remove from calendar** on an existing event, or send `/deleteevent Studying with Josh`. Search covers 30 days back and 90 days ahead. BRB shows the exact calendar, dates, and cancellation impact, then requires **Delete this event**. Recurring events support a single occurrence, never deletion of the whole series. Personal calendars need **Connections → Remove calendar events in Telegram → Enable calendar editing**, separately from read-only calendar selection; BRB-created events use the existing app-created grant.
+
+Deletion uses the current Google event version (`If-Match`), scoped expiring confirmations, and a durable queue. Google-confirmed results are distinguished from missing events, local-only removal, stale previews, and uncertain failures. Retry always opens a fresh preview. Removed events stay suppressed across synchronization and source reimports. Organizer cancellations may notify guests; the confirmation shows this before submission. No bulk deletion, RSVP cancellation on Partiful/Luma, or removal from read-only subscribed calendars is supported. See [Telegram removal instructions](docs/telegram-documents.md#remove-an-event).
 
 ### Invitation screenshots in Telegram
 

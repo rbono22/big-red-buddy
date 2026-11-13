@@ -1219,3 +1219,23 @@ test('supported jobs start real Telegram review and employer receipts cannot be 
 });
 
 test('Telegram profile link opens the reusable application fields directly',async()=>{const view=await renderDesignFixture(careerFixture());view.navigate('career-profile');assert.equal(view.document.querySelector('#career-panel-profile').hasAttribute('hidden'),false);assert.equal(view.document.querySelector('#career-profile-details').hasAttribute('open'),true);assert.ok(view.document.querySelector('#career-profile-recruitingSMS'));});
+
+test('calendar editing deep link opens an optional consent panel without starting OAuth',async()=>{
+ const fixture=designFixture();fixture.connections.google.configured=true;fixture.connections.calendarEdit={configured:true,connected:false};
+ const view=await renderDesignFixture(fixture,{'/api/calendar-edit/connect':{url:'https://accounts.google.com/o/oauth2/v2/auth?synthetic=true'}});
+ view.navigate('calendar-edit');
+ const panel=view.document.querySelector('#calendar-edit');assert.ok(panel);assert.equal(view.document.querySelector('#breadcrumb').textContent,'Connections');assert.equal(panel.getAttribute('tabindex'),'-1');
+ assert.match(panel.textContent,/Remove calendar events in Telegram/);assert.match(panel.textContent,/Every removal needs your confirmation/);assert.match(view.document.querySelector('#personal-calendar').textContent,/READ ONLY/);
+ assert.equal(view.requests.some(r=>r.url==='/api/calendar-edit/connect'),false);
+ clickUI(view,'[data-action="connect-calendar-edit"]');await settled();
+ const requests=view.requests.filter(r=>r.url==='/api/calendar-edit/connect');assert.equal(requests.length,1);assert.equal(requests[0].options.method,'POST');assert.equal(requests[0].options.headers['X-CSRF-Token'],'fixture');
+});
+test('calendar editing disconnect targets only its optional grant and preserves read-only controls',async()=>{
+ const fixture=designFixture();fixture.connections.calendarEdit={configured:true,connected:true,accountEmail:'student@cornell.edu'};
+ fixture.personalCalendar={connected:true,enabled:true,calendars:[]};
+ const view=await renderDesignFixture(fixture,{'/api/disconnect':options=>{assert.deepEqual(JSON.parse(options.body),{service:'calendarEditGoogle'});fixture.connections.calendarEdit.connected=false;return{ok:true};}});
+ view.navigate('calendar-edit');assert.match(view.document.querySelector('#calendar-edit').textContent,/student@cornell.edu/);
+ clickUI(view,'#calendar-edit [data-action="disconnect"]');await settled();
+ assert.equal(view.requests.filter(r=>r.url==='/api/disconnect').length,1);assert.ok(view.document.querySelector('[data-action="list-personal"]'));
+ assert.match(view.document.querySelector('#toast').textContent,/Calendar reading stays connected/);assert.match(view.document.querySelector('#calendar-edit').textContent,/Enable calendar editing/);
+});

@@ -26,7 +26,7 @@ test('Events includes personal all-day, ongoing and upcoming entries, with safe 
  const cards=f.sent.filter(j=>j.payload.notification?.personalCalendarRevision===2);
  assert.equal(cards.length,3);assert.match(cards[0].payload.text,/Study group/);assert.match(cards[1].payload.text,/Maker Day[\s\S]*All day/);
  assert.match(cards[2].payload.text,/12:00 PM – 1:00 PM/);
- for(const card of cards){assert.match(card.payload.text,/Already on Google Calendar/);assert.deepEqual(card.payload.replyMarkup.inline_keyboard.flat().map(b=>b.text),['Open in Google Calendar']);validateTelegramReplyMarkup(card.payload.replyMarkup);}
+ for(const card of cards){assert.match(card.payload.text,/Already on Google Calendar/);assert.deepEqual(card.payload.replyMarkup.inline_keyboard.flat().map(b=>b.text),['Remove from calendar','Open in Google Calendar']);validateTelegramReplyMarkup(card.payload.replyMarkup);}
  assert.equal((await f.store.all('events')).length,0);assert.ok(f.sent.every(j=>j.type==='telegram-send'));
 });
 test('personal copies replace suggestions while distinct synced events keep their own cards',async()=>{

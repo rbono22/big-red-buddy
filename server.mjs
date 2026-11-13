@@ -10,6 +10,7 @@ import {listPartifulCalendars,selectPartifulCalendar,addPartifulEvent,savePartif
 import {listLumaCalendars,selectLumaCalendar,addLumaEvent,saveLumaSettings,saveLumaIntent,disconnectLumaCalendar} from './lib/luma-calendar.mjs';
 import {buildEventHub} from './lib/event-hub.mjs';
 import {eventApprovalVersion} from './lib/event-version.mjs';
+import {calendarEventRemoved} from './lib/calendar-mutations.mjs';
 import {readNotificationPreferences,saveNotificationPreferences,FRESH_NOTIFICATION_PREFERENCES} from './lib/notification-preferences.mjs';
 import {listNews,saveNewsSettings,listNewsLabels,selectNewsLabel,startAutomaticNews,disconnectNews} from './lib/news.mjs';
 import {listAcademicCalendar,addAcademicCalendarEvents} from './lib/academic-calendar.mjs';
@@ -32,7 +33,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { openDatabase } from './lib/database.mjs';
 import { createQueue } from './lib/queue.mjs';
-import { createAuth } from './lib/auth.mjs';
+import { createAuth, calendarEditingStatus } from './lib/auth.mjs';
 import { createSlackAuth } from './lib/slack-auth.mjs';
 import { loadSecurityConfig, applySecurityHeaders, enforceRequestHost, enforceRequestOrigin, RateLimiter, clientIP, safeError, HttpError, createJsonBodyReader } from './lib/security.mjs';
 import { TZ, idFor, normalizeEvent, calendarICS, localISO, calendarBounds } from './lib/domain.mjs';
@@ -211,6 +212,7 @@ async function state(store) {
         calendar: secretG.calendarId || null,
         health: await store.get('settings', 'googleHealth')
       },
+      calendarEdit: { configured: !!config.googleClientId, ...await calendarEditingStatus(store) },
       slack: {
         available: !!process.env.SLACK_CLIENT_ID,
         configured: !!secretS.userToken,
@@ -559,6 +561,7 @@ async function route(req, res) {
     if(kind==='luma')return json(res,200,await addLumaEvent(store,{id},queue,approval));
     if(kind==='academic')return json(res,200,await addAcademicCalendarEvents(store,{ids:[id]},queue,approval));
     const event=await owned(store,'events',id);
+    if(await calendarEventRemoved(store,{localId:id}))throw new HttpError(409,'This event was removed or is being removed. It cannot be added again from this review.','calendar_event_removed');
     if(eventApprovalVersion(event)!==item.action.version)throw new HttpError(409,'The source changed while approving. Refresh and review the new details.');
     if(!event.start||event.evidenceVerified===false||event.cancelled||event.localIntent==='declined')throw new HttpError(400,'Review the source and confirm the missing date or time before adding.');
     let update={...event,status:'approved',reviewedAt:nowISO()};
@@ -606,6 +609,7 @@ async function route(req, res) {
     const b = await body(req);
     if (!['approve', 'dismiss', 'cancel'].includes(b.action) || !Array.isArray(b.ids) || !b.ids.length || b.ids.length > 200) throw new HttpError(400, 'Choose items and a review action.');
     const selected = await Promise.all([...new Set(b.ids)].map(id => owned(store, 'events', id)));
+    if((await Promise.all(selected.map(event=>calendarEventRemoved(store,{localId:event.id})))).some(Boolean))throw new HttpError(409,'A selected event was removed or is being removed. Refresh your schedule.','calendar_event_removed');
     if(b.expected!==undefined){
       const keys=['id','title','kind','date','start','end','location','status','cancelled','evidenceVerified','evidence','updatedAt','sourceId'];
       if(!Array.isArray(b.expected)||b.expected.length!==selected.length||selected.some(event=>{const expected=b.expected.filter(item=>item?.id===event.id);return expected.length!==1||keys.some(key=>expected[0][key]!== (event[key]??null));}))throw new HttpError(409,'These dates changed since you opened this view. Refresh and review the updated schedule.');
@@ -631,6 +635,7 @@ async function route(req, res) {
   if (p === '/api/events/time') {
     const b = await body(req),
       e = await owned(store, 'events', b.id);
+    if(await calendarEventRemoved(store,{localId:e.id}))throw new HttpError(409,'This event was removed or is being removed. Refresh your schedule.','calendar_event_removed');
     let start;
     try {
       start = localISO(e.date, b.time);
@@ -668,8 +673,10 @@ async function route(req, res) {
     } catch {
       throw new HttpError(400, 'Enter a title, valid date and time.');
     }
+    const sourceId=idFor('manual',e.title,e.date);
+    if(await calendarEventRemoved(store,{localId:idFor(sourceId,e.kind,e.title,e.date)}))throw new HttpError(409,'This event was removed or is being removed. Choose a different event to add.','calendar_event_removed');
     await persistCandidates(store, {
-      id: idFor('manual', e.title, e.date),
+      id: sourceId,
       name: 'Student-entered event',
       type: 'event',
       url: safeLink(b.url),
@@ -742,6 +749,7 @@ async function route(req, res) {
       type: 'event',
       method: 'Uploaded .ics export; no automatic refresh'
     };
+    if((await Promise.all(events.map(event=>calendarEventRemoved(store,{localId:idFor(source.id,event.kind,event.title,event.date)})))).some(Boolean))throw new HttpError(409,'This import includes an event you removed or are removing. Remove it from the import before trying again.','calendar_event_removed');
     await persistCandidates(store, source, events);
     return json(res, 200, {
       count: events.length
@@ -843,6 +851,9 @@ async function route(req, res) {
   if (p === '/api/google/connect') return json(res, 200, await auth.beginGoogle(req, res, {
     purpose: 'calendar',
     userSession: session
+  }));
+  if (p === '/api/calendar-edit/connect' && req.method === 'POST') return json(res, 200, await auth.beginGoogle(req, res, {
+    purpose: 'calendar-edit', userSession: session, returnPath: '/#calendar-edit'
   }));
   if (p === '/api/google/sync') return json(res, 202, await task(user, 'google-sync', {}, {
     retrySafe: false,
@@ -977,10 +988,12 @@ async function route(req, res) {
   }));
   if (p === '/api/disconnect') {
     const b = await body(req);
-    if (!['google', 'telegram', 'slack','campusGoogle'].includes(b.service)) throw new HttpError(400, 'Unknown connection.');
+    if (!['google', 'telegram', 'slack','campusGoogle','calendarEditGoogle'].includes(b.service)) throw new HttpError(400, 'Unknown connection.');
     if (await queue.hasRunning(user.id)) throw new HttpError(409, 'Wait for your running jobs to finish before disconnecting.');
     await queue.cancelPending(user.id);
-    if (b.service === 'telegram') await disconnectTelegram(database, store);else await store.delete('secrets', b.service);
+    if (b.service === 'telegram') await disconnectTelegram(database, store);
+    else if (b.service === 'calendarEditGoogle') await store.put('secrets', b.service, {connectionRevision:randomBytes(32).toString('base64url'),disconnectedAt:nowISO()});
+    else await store.delete('secrets', b.service);
     if(b.service==='campusGoogle'){const personal=await store.get('settings','personalCalendar');if(personal)await store.put('settings','personalCalendar',{...personal,enabled:false,events:[],lastSuccess:null,lastError:null,revision:(personal.revision||0)+1});}
     if(b.service==='campusGoogle')for(const key of ['campusCalendar','partifulCalendar','lumaCalendar']){const old=await store.get('settings',key);if(old)await store.put('settings',key,{...old,continuous:false,autoAdd:false,warning:'Calendar reading disconnected; retained events are a snapshot.'});}
     await audit(store, 'connection', `${b.service} disconnected. Provider permissions may be revoked separately.`);

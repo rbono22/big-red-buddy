@@ -1,5 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+function atomicFixture(rows,userId='calendar-description-fixture'){
+ const key=(bucket,id)=>`${bucket}:${id}`;
+ return {userId,async get(bucket,id){return structuredClone(rows.get(key(bucket,id))??null);},async put(bucket,id,value){rows.set(key(bucket,id),structuredClone(value));},async all(bucket){return [...rows].filter(([k])=>k.startsWith(`${bucket}:`)).map(([,value])=>structuredClone(value));},async putIfAbsent(bucket,id,value){if(!rows.has(key(bucket,id)))rows.set(key(bucket,id),structuredClone(value));return structuredClone(rows.get(key(bucket,id)));},async compareAndSet(bucket,id,before,after){if(JSON.stringify(rows.get(key(bucket,id))??null)!==JSON.stringify(before))return false;rows.set(key(bucket,id),structuredClone(after));return true;}};
+}
 test('provider email events put canonical registration links in Google descriptions',()=>{
  for(const [url,label] of [['https://luma.com/84uanwts?tracking=secret','Register on Luma'],['https://partiful.com/e/invitation?token=secret','RSVP on Partiful']]){
   const description=calendarDescription({kind:'event',connector:'event-email',title:'Invitation',rsvpUrl:url,sourceUrl:url,sourceName:'Invitation email',evidence:'Public event details'});
@@ -37,7 +41,7 @@ test('ICS exports the same escaped prompt without breaking calendar records',()=
 
 test('Google sync uses the same description and stable event identity without touching other events',async t=>{
   const e=assignment(),rows=new Map([['events:deck',e],['events:other',{...e,id:'other'}],['secrets:google',{refresh_token:'fixture',access_token:'fixture',expiresAt:Date.now()+3600000,calendarId:'fixture'}]]);
-  const store={userId:'fixture',async get(b,id){return rows.get(`${b}:${id}`)||null;},async put(b,id,v){rows.set(`${b}:${id}`,v);},async all(b){return [...rows].filter(([k])=>k.startsWith(`${b}:`)).map(([,v])=>v);}};
+  const store=atomicFixture(rows,'fixture');
   const original=globalThis.fetch,calls=[];globalThis.fetch=async(url,options)=>{calls.push({url,body:JSON.parse(options.body),method:options.method});return new Response(JSON.stringify({id:'remote',htmlLink:'https://calendar.google.com/'}));};t.after(()=>globalThis.fetch=original);
   await syncGoogle(store,{eventIds:['deck']});
   assert.equal(calls.length,1);assert.equal(calls[0].method,'PUT');assert.equal(calls[0].body.description,calendarDescription(e));assert.equal(rows.get('events:other').googleId,undefined);
@@ -58,7 +62,7 @@ test('social event descriptions lead with canonical registration links and prese
 
 test('Google Calendar receives the same explicit Partiful and Luma registration links as ICS exports',async t=>{
  const events=[socialEvent('partiful','https://partiful.com/e/synthetic-gathering'),socialEvent('luma','https://luma.com/synthetic-gathering')],rows=new Map(events.map(event=>['events:'+event.id,event]));rows.set('secrets:google',{refresh_token:'fixture',access_token:'fixture',expiresAt:Date.now()+3600000,calendarId:'fixture'});
- const store={userId:'social-fixture',async get(bucket,id){return rows.get(`${bucket}:${id}`)||null;},async put(bucket,id,value){rows.set(`${bucket}:${id}`,value);},async all(bucket){return [...rows].filter(([key])=>key.startsWith(`${bucket}:`)).map(([,value])=>value);}};
+ const store=atomicFixture(rows,'social-fixture');
  const original=globalThis.fetch,calls=[];globalThis.fetch=async(url,options)=>{calls.push({url,method:options.method,body:JSON.parse(options.body)});return new Response(JSON.stringify({id:'synthetic-remote-'+calls.length,htmlLink:'https://calendar.google.com/'}));};t.after(()=>globalThis.fetch=original);
  await syncGoogle(store,{eventIds:events.map(event=>event.id)});assert.equal(calls.length,2);
  for(const event of events){const call=calls.find(row=>row.body.description===calendarDescription(event));assert.ok(call);assert.equal(call.method,'PUT');assert.match(call.body.description,/^(RSVP on Partiful|Register on Luma): https:\/\//);assert.match(call.body.description,/does not register you/);}

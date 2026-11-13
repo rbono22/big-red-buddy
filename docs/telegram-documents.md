@@ -52,6 +52,17 @@ Settings also offers reminder category and lead-time buttons. These apply to eve
 Telegram-origin calendar jobs report provider-confirmed completion, or an accurate partial/failure notice with Retry and Reconnect. Provider timeouts do not become success messages; stable event IDs protect retries from duplicate inserts. An uncertain calendar creation still requires reconciliation in Connections. Receipts are best-effort queued messages; Google success remains recorded even if receipt delivery fails. Buttons expire after 30 minutes and are bound to the student and current Telegram connection; expired buttons offer a fresh menu. Temporary action records are capped and pruned by the worker.
 
 
+## Remove an event
+
+1. Choose **Events → Remove an event**, or tap **Remove from calendar** on a calendar event. You can also type “Delete studying” or `/deleteevent Studying with Josh`.
+2. Choose the specific event from the results. Search includes the previous 30 days and next 90 days, with upcoming events first. Dates and calendar names distinguish events with similar titles.
+3. Review the exact date, time, calendar, and cancellation impact. Recurring entries remove only the selected occurrence. If you organized a meeting, the preview explains that Google may notify its guests.
+4. Tap **Delete this event**. BRB reports the result after Google responds. **Cancel** leaves the event in place. A plain “yes” is not a deletion confirmation.
+
+Events on the BRB assistant calendar use the Google connection you already authorized. To remove events from your selected personal calendars, open **Connections → Remove calendar events in Telegram → Enable calendar editing** and complete Google's consent screen once. Select your calendars in the reading section above it. Read-only subscriptions cannot be edited. Disabling editing keeps calendar reading connected.
+
+Changed events need a new preview. If Google cannot confirm deletion, **Check event / Retry** reads the event again before asking for confirmation; the bot never blindly repeats a deletion. Unresolved removals can also be found through the removal search. BRB reminders remain paused while a confirmed removal is unresolved. Deleted imports are remembered so later synchronization does not bring them back. Removing an event does not cancel a Partiful/Luma registration or ticket. This flow supports one event or occurrence at a time.
+
 ## Apply to supported Ramp jobs
 
 Choose **Jobs → Apply via Telegram**. Fill reusable payroll location, office preferences, and SMS/WhatsApp choices in **Resume & profile → Common application details**; the bot’s profile button opens this form directly. Tap **Use saved profile** afterwards. BRB estimates relevant product-management experience from resume titles and dates and shows the basis for review. Answer remaining employer questions, or tap **Draft with AI** and review the suggested text.

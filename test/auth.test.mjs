@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { createAuth, CALENDAR_SCOPE, CAMPUS_CALENDAR_SCOPES, EVENT_EMAIL_SCOPE, GMAIL_SEND_SCOPE, identityId, pruneExpiredAuthRecords } from '../lib/auth.mjs';
+import { createAuth, CALENDAR_SCOPE, CAMPUS_CALENDAR_SCOPES, CALENDAR_EDIT_SCOPES, calendarEditingStatus, EVENT_EMAIL_SCOPE, GMAIL_SEND_SCOPE, identityId, pruneExpiredAuthRecords } from '../lib/auth.mjs';
 import { loadSecurityConfig, sha256 } from '../lib/security.mjs';
 
 function setup(overrides = {}) {
@@ -26,7 +26,9 @@ function cookies(res) { return res.getHeader('Set-Cookie').map(cookie => cookie.
 function request(cookie = '', remoteAddress = '127.0.0.1') { return { method: 'POST', headers: { cookie }, socket: { remoteAddress } }; }
 async function dev(fixture, email = 'alice@cornell.edu') { const res = response(); const context = await fixture.auth.devSignIn(request(), res, email); return { context, cookie: cookies(res) }; }
 async function googleStart(fixture, cookie = '', options = {}) {
-  const res = response(), value = await fixture.auth.beginGoogle(request(cookie), res, options), url = new URL(value.url);
+  const req = request(cookie);
+  if (options.purpose === 'calendar-edit') req.headers['x-csrf-token'] = options.userSession?.csrfToken;
+  const res = response(), value = await fixture.auth.beginGoogle(req, res, options), url = new URL(value.url);
   return { url, cookie: [cookie, cookies(res)].filter(Boolean).join('; '), state: url.searchParams.get('state'), nonce: url.searchParams.get('nonce') };
 }
 function googlePayload(start, extra = {}) { return { sub: 'google-alice', email: 'alice@cornell.edu', email_verified: true, hd: 'cornell.edu', name: 'Alice', nonce: start.nonce, ...extra }; }
@@ -353,4 +355,119 @@ test('a disconnect racing the final Gmail grant write wins the exact-value compa
   const tombstone={connectionRevision:'raced-disconnect',disconnectedAt:'2026-11-12T12:00:00Z'};
   f.database.forUser=userId=>{const store=original(userId),compare=store.compareAndSet.bind(store);return{...store,async compareAndSet(bucket,id,previous,next){if(bucket==='secrets'&&id==='dailyEmailGoogle')await store.put(bucket,id,tombstone);return compare(bucket,id,previous,next);}};};
   await assert.rejects(callback(f,start),e=>e.code==='connection_changed');assert.deepEqual(await student.store.get('secrets','dailyEmailGoogle'),tombstone);
+});
+
+async function calendarEditStart(f, student) {
+  const start = await googleStart(f, student.cookie, { purpose: 'calendar-edit', userSession: student.context });
+  f.setPayload(googlePayload(start)); f.setTokens({ scope: `openid email ${CALENDAR_EDIT_SCOPES.join(' ')}` });
+  return start;
+}
+test('personal calendar editing is a separate optional consent with tenant-bound identity and no default permission expansion', async () => {
+  const f = setup(), student = await dailyEmailStudent(f), { store } = student;
+  const appGrant = { refresh_token: 'app-calendar-refresh', calendarId: 'assistant-calendar', scope: CALENDAR_SCOPE };
+  const readGrant = { refresh_token: 'personal-read-refresh', scope: CAMPUS_CALENDAR_SCOPES.join(' ') };
+  await store.put('secrets', 'google', appGrant); await store.put('secrets', 'campusGoogle', readGrant);
+  assert.deepEqual(await calendarEditingStatus(store), { connected: false, accountEmail: null, connectedAt: null });
+  const start = await calendarEditStart(f, student), params = start.url.searchParams;
+  assert.deepEqual(params.get('scope').split(' '), ['openid', 'email', 'profile', ...CALENDAR_EDIT_SCOPES]);
+  assert.equal(params.get('prompt'), 'consent'); assert.equal(params.get('access_type'), 'offline');
+  assert.equal(params.get('include_granted_scopes'), 'true'); assert.equal(params.get('code_challenge_method'), 'S256');
+  assert.equal(params.get('hd'), 'cornell.edu'); assert.equal(params.get('login_hint'), 'alice@cornell.edu');
+  const res = response(), result = await callback(f, start, res), grant = await store.get('secrets', 'calendarEditGoogle');
+  assert.equal(result.purpose, 'calendar-edit'); assert.equal(result.redirectPath, '/#calendar-edit'); assert.equal(result.tokens, undefined);
+  assert.equal(res.getHeader('Set-Cookie'), undefined); assert.equal(result.user.id, student.context.user.id);
+  assert.equal(grant.subject, 'google-alice'); assert.equal(grant.email, 'alice@cornell.edu'); assert.equal(grant.refresh_token, 'refresh');
+  assert.equal(grant.id_token, undefined); assert.equal(grant.clientSecret, undefined); assert.match(grant.connectionRevision, /^[\w-]{43}$/);
+  assert.equal(grant.connectedAt, new Date(1000000).toISOString());
+  assert.deepEqual(await calendarEditingStatus(store), { connected: true, accountEmail: 'alice@cornell.edu', connectedAt: grant.connectedAt });
+  assert.deepEqual(await store.get('secrets', 'google'), appGrant); assert.deepEqual(await store.get('secrets', 'campusGoogle'), readGrant);
+  assert.equal(await f.database.forUser(identityId('google', 'google-bob')).get('secrets', 'calendarEditGoogle'), undefined);
+  for (const purpose of ['login', 'calendar', 'campus-calendar']) {
+    const ordinary = await googleStart(f, student.cookie, { purpose, userSession: student.context });
+    assert.equal(ordinary.url.searchParams.get('scope').split(' ').includes(CALENDAR_EDIT_SCOPES[1]), false, purpose);
+  }
+  await assert.rejects(callback(f, start), e => e.code === 'invalid_oauth_state');
+});
+test('calendar editing requires session CSRF and browser-bound OAuth state', async () => {
+  const f = setup(), student = await dailyEmailStudent(f), other = await dev(f, 'bob@cornell.edu');
+  for (const token of [undefined, other.context.csrfToken]) {
+    const req = request(student.cookie); req.headers['x-csrf-token'] = token;
+    await assert.rejects(f.auth.beginGoogle(req, response(), { purpose: 'calendar-edit', userSession: student.context }), e => e.code === 'invalid_csrf');
+  }
+  await assert.rejects(googleStart(f, other.cookie, { purpose: 'calendar-edit', userSession: student.context }), e => e.code === 'invalid_oauth_session');
+  const start = await calendarEditStart(f, student);
+  await assert.rejects(callback(f, { ...start, cookie: student.cookie }), e => e.code === 'invalid_oauth_state');
+  assert.equal(await student.store.get('secrets', 'calendarEditGoogle'), undefined);
+  await callback(f, start);
+});
+test('calendar editing rejects missing grants, identity changes, revoked sessions and token reuse from other connectors', async () => {
+  const expected = { listOnly: 'missing_calendar_scope', eventsOnly: 'missing_calendar_scope', account: 'account_mismatch', domain: 'account_not_allowed', nonce: 'invalid_identity', unverified: 'invalid_identity', session: 'invalid_oauth_session', offline: 'missing_refresh_token', revoked: 'authentication_required', deleted: 'authentication_required' };
+  for (const [variant, code] of Object.entries(expected)) {
+    const f = setup(), student = await dailyEmailStudent(f), start = await calendarEditStart(f, student);
+    if (variant === 'listOnly') f.setTokens({ scope: CALENDAR_EDIT_SCOPES[0] });
+    if (variant === 'eventsOnly') f.setTokens({ scope: CALENDAR_EDIT_SCOPES[1] });
+    if (variant === 'account') f.setPayload(googlePayload(start, { sub: 'google-bob', email: 'bob@cornell.edu' }));
+    if (variant === 'domain') f.setPayload(googlePayload(start, { email: 'alice@gmail.com', hd: undefined }));
+    if (variant === 'nonce') f.setPayload(googlePayload(start, { nonce: 'wrong' }));
+    if (variant === 'unverified') f.setPayload(googlePayload(start, { email_verified: false }));
+    if (variant === 'session') { const bob = await dev(f, 'bob@cornell.edu'); start.cookie = `${bob.cookie}; ${start.cookie.split('; ').find(c => c.startsWith('dabas_oauth='))}`; }
+    if (variant === 'offline') {
+      await student.store.put('secrets', 'google', { subject: 'google-alice', refresh_token: 'app-refresh', scope: CALENDAR_SCOPE });
+      await student.store.put('secrets', 'campusGoogle', { subject: 'google-alice', refresh_token: 'reader-refresh', scope: CAMPUS_CALENDAR_SCOPES.join(' ') });
+      f.setTokens({ scope: CALENDAR_EDIT_SCOPES.join(' '), refresh_token: undefined });
+    }
+    if (variant === 'revoked') await f.auth.revokeAll(student.context.user.id);
+    if (variant === 'deleted') f.deleted.add(student.context.user.id);
+    await assert.rejects(callback(f, start), e => e.code === code, variant);
+    assert.equal(await student.store.get('secrets', 'calendarEditGoogle'), undefined, variant);
+  }
+});
+test('calendar editing rechecks revocation and pending account deletion after Google exchanges the code', async () => {
+  for (const variant of ['revoked', 'deleting']) {
+    const f = setup(), student = await dailyEmailStudent(f), start = await calendarEditStart(f, student), getToken = f.client.getToken.bind(f.client);
+    f.client.getToken = async options => { const result = await getToken(options); if (variant === 'revoked') await f.auth.revokeAll(student.context.user.id); else await student.store.put('settings', 'account', { deleting: true }); return result; };
+    await assert.rejects(callback(f, start), e => e.code === (variant === 'revoked' ? 'authentication_required' : 'account_deleting'));
+    assert.equal(await student.store.get('secrets', 'calendarEditGoogle'), undefined);
+  }
+});
+test('calendar editing reconnect reuses only a complete same-account grant and rotates the proposal generation', async () => {
+  const f = setup(), student = await dailyEmailStudent(f), first = await calendarEditStart(f, student); await callback(f, first);
+  const before = await student.store.get('secrets', 'calendarEditGoogle'), a = await calendarEditStart(f, student), b = await calendarEditStart(f, student);
+  f.setPayload(googlePayload(a)); f.setTokens({ scope: CALENDAR_EDIT_SCOPES.join(' '), refresh_token: undefined }); await callback(f, a);
+  const current = await student.store.get('secrets', 'calendarEditGoogle');
+  assert.equal(current.refresh_token, before.refresh_token); assert.notEqual(current.connectionRevision, before.connectionRevision);
+  f.setPayload(googlePayload(b)); await assert.rejects(callback(f, b), e => e.code === 'connection_changed');
+  assert.deepEqual(await student.store.get('secrets', 'calendarEditGoogle'), current);
+  for (const invalid of [{ subject: 'different-subject' }, { email: 'bob@cornell.edu' }, { scope: CAMPUS_CALENDAR_SCOPES.join(' ') }]) {
+    const saved = { ...current, ...invalid }; await student.store.put('secrets', 'calendarEditGoogle', saved);
+    const start = await calendarEditStart(f, student); f.setTokens({ scope: CALENDAR_EDIT_SCOPES.join(' '), refresh_token: undefined });
+    await assert.rejects(callback(f, start), e => e.code === 'missing_refresh_token');
+    assert.deepEqual(await student.store.get('secrets', 'calendarEditGoogle'), saved);
+  }
+});
+test('calendar editing disconnect fences pending and racing consent without inheriting tombstone credentials', async () => {
+  for (const race of [false, true]) {
+    const f = setup(), student = await dailyEmailStudent(f), start = await calendarEditStart(f, student);
+    const tombstone = { connectionRevision: 'disconnected-generation', disconnectedAt: '2026-11-12T12:00:00Z' };
+    if (race) {
+      const original = f.database.forUser.bind(f.database);
+      f.database.forUser = userId => { const store = original(userId), compare = store.compareAndSet.bind(store); return { ...store, async compareAndSet(bucket, id, previous, next) { if (bucket === 'secrets' && id === 'calendarEditGoogle') await store.put(bucket, id, tombstone); return compare(bucket, id, previous, next); } }; };
+    } else await student.store.put('secrets', 'calendarEditGoogle', tombstone);
+    await assert.rejects(callback(f, start), e => e.code === 'connection_changed');
+    assert.deepEqual(await student.store.get('secrets', 'calendarEditGoogle'), tombstone);
+    assert.equal((await calendarEditingStatus(student.store)).connected, false);
+    const retry = await calendarEditStart(f, student); f.setTokens({ scope: CALENDAR_EDIT_SCOPES.join(' '), refresh_token: undefined });
+    await assert.rejects(callback(f, retry), e => e.code === 'missing_refresh_token');
+  }
+});
+test('calendar editing status requires a complete owned grant and hides credentials', async () => {
+  const f = setup(), student = await dailyEmailStudent(f), start = await calendarEditStart(f, student); await callback(f, start);
+  const valid = await student.store.get('secrets', 'calendarEditGoogle');
+  for (const invalid of [{ subject: 'other-subject' }, { email: 'private@gmail.com' }, { scope: CALENDAR_EDIT_SCOPES[0] }, { refresh_token: null }, { connectionRevision: null }, { connectedAt: null }, { disconnectedAt: '2026-11-12T12:00:00Z' }]) {
+    await student.store.put('secrets', 'calendarEditGoogle', { ...valid, ...invalid });
+    assert.deepEqual(await calendarEditingStatus(student.store), { connected: false, accountEmail: null, connectedAt: null });
+  }
+  await student.store.put('secrets', 'calendarEditGoogle', valid); await student.store.put('settings', 'account', { deleting: true });
+  assert.equal((await calendarEditingStatus(student.store)).connected, false);
+  await assert.rejects(calendarEditStart(f, student), e => e.code === 'account_deleting');
 });
