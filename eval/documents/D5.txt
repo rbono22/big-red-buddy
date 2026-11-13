@@ -1,0 +1,35 @@
+heel ey Swe wee ouwwY
+
+a. ~
+
+Forward Deployed Engineer (FDE) 2
+
+New York, United States » 3 weeks ago » 49 applicants
+Promoted by hirer: Actively reviewing applicants
+
+eg ( Save )
+
+About the job
+
+About the Role
+At EdgeVerve Forward Deployed Engineers embed directly with strategic customers to solve real-workd
+engineering probiems, duld integrations, extensions, and worktlows that accelerate product adoption and
+business value realization. This is neither a configuration role mor a delvery-consulting rele. The role is responsible
+tor shipping production-refevart code on Eve accounts, with field learnings feeding directly into the product
+roadmap through a structured feedback loop. The position ts sulted for engineers who can build deployable
+solutions quickly and Gemonstrate measurable customer Impact.
+Key Responsibilities
+Partner with clit engineering teams to understand gos, challenges, and priorities.
+Lead workshops, discovery sessions, sclutioning, and technical discussions.
+Analyze customer operating worktiows and identify gaps between the deployed product and account~specitic
+requirements
+Design and buld the custo Integrations, connectors, and product extensions that close that gap
+Develop working protetypes using customer data to validate feasibility before delvery momentum Is impacted
+Harden validated prototypes to preduction-grade relabiity and hand off cleanly to Support/Customer Success
+Symtheste field learnings into concrete, prioritized inputs for Product and Engineering, serving as a primary
+source of roadmap signal rather than ory a delvery resource
+Serve as the account's trusted technical point of comtact through cepicoyment and initial ramp-up
+Role Scope: Standard product configuration and steady-state training are explicitly out of scope beyond the initia’
+ramp-up period. These activities are routed to Service delivery and self-service tooling. If day-to-day work is
+limmed to configuration, the scope should be escalated rather than absorbed whhin EV FDE role.
+Required Profic . more
