@@ -1266,11 +1266,24 @@ test('application browser handoff page explains setup without creating a secret 
  const view=await renderDesignFixture(designFixture());view.navigate('application-handoff/fixture-application');
  assert.match(view.document.querySelector('h1').textContent,/Continue in your browser/);
  const panel=view.document.querySelector('#application-handoff');assert.match(panel.textContent,/chrome:\/\/extensions/);assert.match(panel.textContent,/Load unpacked/);assert.match(panel.textContent,/Complete any remaining questions and submit/);
+ const open=panel.querySelector('a[data-brb-autofill]');assert.equal(open.textContent,'Open & autofill application');assert.equal(open.getAttribute('href'),'/#application-handoff/fixture-application');assert.match(panel.textContent,/With BRB helper version 0\.1\.3 installed/);assert.match(panel.textContent,/Refresh this BRB page/);
  assert.equal(panel.querySelector('a[download]').getAttribute('href'),'/browser-helper.zip');
  assert.equal(panel.querySelector('[data-token],input,textarea'),null);
  assert.equal(view.requests.some(r=>r.url.includes('/application-handoff')),false);
  assert.equal(view.requests.some(r=>r.options?.method==='POST'),false);
  view.navigate('application-handoff/<img src=x onerror=bad()>');assert.match(view.document.querySelector('h1').textContent,/Open a fresh application link/);assert.equal(view.document.querySelector('#main img'),null);
+});
+
+test('handoff click without an active helper explains setup while extension-handled clicks stay untouched',async()=>{
+ for(const intercepted of [false,true]){
+  const view=await renderDesignFixture(designFixture());view.navigate('application-handoff/fixture-application');
+  const panel=view.document.querySelector('#application-handoff'),open=panel.querySelector('[data-brb-autofill]'),click=new view.window.Event('click',{bubbles:true,cancelable:true});
+  if(intercepted)click.preventDefault();open.dispatchEvent(click);
+  assert.equal(Boolean(panel.querySelector('#handoff-helper-setup').open),!intercepted);
+  assert.equal(Boolean(panel.querySelector('#handoff-launch-status').textContent),!intercepted);
+  if(!intercepted)assert.match(panel.querySelector('#handoff-launch-status').textContent,/Install or update to version 0\.1\.3/);
+  assert.equal(open.getAttribute('href'),'/#application-handoff/fixture-application');assert.equal(view.requests.some(r=>r.url.includes('/application-handoff')||r.options?.method==='POST'),false);
+ }
 });
 
 test('browser handoff preserves an unconfirmed submission warning and starts from the BRB tab',async()=>{
@@ -1306,7 +1319,8 @@ test('late saved-answer deletions never erase or expose another signed-in studen
 test('browser handoff tracker rows continue on the safe owned application link without claiming submission',async()=>{
  const fixture=designFixture();fixture.applicationTracker=[{id:'tracker',title:'Analyst',company:'Example',status:'needs_attention',statusLabel:'Continue in your browser',source:'telegram',liveApplicationId:'app:fixture_1',liveApplicationStatus:'browser_handoff',browserHandoffAvailable:true,applyUrl:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply'}];
  const view=await renderDesignFixture(fixture);view.navigate('careers');clickUI(view,'[data-action="career-tab"][data-tab="applications"]');
- const tracker=view.document.querySelector('#application-tracker'),link=[...tracker.querySelectorAll('a')].find(a=>a.textContent==='Continue in my browser');assert.ok(link);assert.equal(link.getAttribute('href'),'/#application-handoff/app:fixture_1');assert.match(tracker.textContent,/Finish and submit on the employer’s page\. BRB has not confirmed a submission/);assert.doesNotMatch(tracker.textContent,/Continue in Telegram with/);assert.equal(tracker.querySelector('[data-action="application-tracker-status"]'),null);
+ const tracker=view.document.querySelector('#application-tracker'),link=[...tracker.querySelectorAll('a')].find(a=>a.textContent==='Open & autofill application');assert.ok(link);assert.equal(link.hasAttribute('data-brb-autofill'),true);assert.equal(link.getAttribute('href'),'/#application-handoff/app:fixture_1');assert.match(tracker.textContent,/Finish and submit on the employer’s page\. BRB has not confirmed a submission/);assert.doesNotMatch(tracker.textContent,/Continue in Telegram with/);assert.equal(tracker.querySelector('[data-action="application-tracker-status"]'),null);
+ link.dispatchEvent(new view.window.Event('click',{bubbles:true,cancelable:true}));assert.equal(link.getAttribute('href'),'/#application-handoff/app:fixture_1');assert.equal(view.requests.some(r=>r.url.includes('/application-handoff')||r.options?.method==='POST'),false);
  fixture.applicationTracker[0].liveApplicationId='unsafe?token=private';const invalid=await renderDesignFixture(fixture);invalid.navigate('careers');assert.equal(Boolean(invalid.document.querySelector('#application-tracker a[href*="application-handoff"]')),false);assert.doesNotMatch(invalid.document.querySelector('#application-tracker').innerHTML,/token=private/);
 });
 

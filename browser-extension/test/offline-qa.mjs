@@ -6,7 +6,7 @@ import {chromium} from 'playwright-core';
 import {fillApplication} from '../fill.mjs';
 import {readLeverForm} from '../../lib/lever-browser.mjs';
 
-const urls={lever:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply',greenhouse:'https://job-boards.greenhouse.io/example/jobs/123',greenhouseEmbed:'https://job-boards.greenhouse.io/embed/job_app?for=example&token=123',ashby:'https://jobs.ashbyhq.com/ramp/12345678-1234-1234-1234-123456789abc/application',workable:'https://apply.workable.com/valsoft-corp/j/ABC123DEF4/apply/'};
+const urls={brb:'https://app.bigredbuddy.com/',lever:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply',greenhouse:'https://job-boards.greenhouse.io/example/jobs/123',greenhouseEmbed:'https://job-boards.greenhouse.io/embed/job_app?for=example&token=123',ashby:'https://jobs.ashbyhq.com/ramp/12345678-1234-1234-1234-123456789abc/application',workable:'https://apply.workable.com/valsoft-corp/j/ABC123DEF4/apply/'};
 const pdf=(name,text)=>{const bytes=Buffer.from('%PDF-1.7\n'+text);return {name,mimeType:'application/pdf',file:bytes.toString('base64'),sha256:createHash('sha256').update(bytes).digest('hex')};};
 const documents={resume:pdf('Resume.pdf','Synthetic résumé for Alex Example'),coverLetter:pdf('Cover Letter.pdf','Synthetic cover letter for Alex Example')};
 const browser=await chromium.launch({headless:true,executablePath:process.env.APPLICATION_BROWSER_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',chromiumSandbox:true});
@@ -23,6 +23,18 @@ async function fixture(provider,html,run){
  }finally{await context.close();}
 }
 try{
+ const content=await readFile(new URL('../brb-content.js',import.meta.url),'utf8');
+ await fixture('brb','<h1>Applications</h1><a id="open" data-brb-autofill href="/#application-handoff/synthetic">Open &amp; autofill application</a>',async page=>{
+  await page.evaluate(()=>{window.__handoffs=[];window.__bubbleClicks=0;window.chrome={runtime:{sendMessage:async message=>{window.__handoffs.push(message);return {ok:true,filled:2,remaining:0};}}};});
+  await page.addScriptTag({content});
+  await page.evaluate(()=>{document.addEventListener('click',event=>{if(!event.isTrusted)event.preventDefault();window.__bubbleClicks++;});document.getElementById('open').click();});
+  assert.equal(await page.evaluate(()=>window.__handoffs.length),0,'programmatic clicks cannot launch a handoff');
+  assert.equal(await page.evaluate(()=>window.__bubbleClicks),1);
+  await page.locator('#open').click();
+  await page.waitForFunction(()=>document.getElementById('brb-autofill-status')?.textContent.includes('Filled 2 fields'));
+  assert.deepEqual(await page.evaluate(()=>window.__handoffs),[{action:'beginHandoff',applicationId:'synthetic'}]);
+  assert.equal(await page.evaluate(()=>window.__bubbleClicks),1,'trusted click is captured before the app fallback');assert.equal(page.url(),urls.brb);
+ });
  const html=await readFile(new URL('../../tests/fixtures/lever-tenna-application.html',import.meta.url),'utf8');
  await fixture('lever',html.replace('</form>','<div class="application-question"><label><span class="application-label">Cover letter</span><input type="file" name="coverLetter"></label></div></form>'),async(page,payload)=>{
   const form=await readLeverForm(page);payload.fields=form.fields.map(f=>({...f,...(f.type==='file'?{document:f.key==='_systemfield_resume'?'resume':'coverLetter'}:{})}));
