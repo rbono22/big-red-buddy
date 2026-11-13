@@ -40,6 +40,17 @@ try{
   payload.fields=[{key:'updates',controlName:'updates',label:'Updates',type:'checkbox',options:['Yes','No']},{key:'location',controlName:'location',label:'Current location',type:'location'}];payload.answers={updates:{value:'Yes'},location:{value:'New York, NY'}};
   const result=await page.evaluate(fillApplication,payload);assert.equal(result.filled,1);assert.equal(result.remaining,1);assert.equal(await page.locator('input[type=checkbox]').isChecked(),true);assert.equal(result.skipped[0].reason,'Select the matching city');
  });
+ await fixture('lever','<h2>Product Manager</h2><form id="application-form" method="POST"><div class="application-question"><div class="application-label">Are you legally authorized to work in the United States?</div><label><input type="radio" name="cards[synthetic][authorization]" value="Yes">Yes</label><label><input type="radio" name="cards[synthetic][authorization]" value="No">No</label></div><div class="application-question"><div class="application-label">Will you now or in the future require sponsorship for employment visa status</div><label><input type="radio" name="cards[synthetic][sponsorship]" value="Yes">Yes</label><label><input type="radio" name="cards[synthetic][sponsorship]" value="No">No</label><label><input type="radio" name="cards[synthetic][sponsorship]" value="Not Applicable">Not Applicable</label></div><button type="submit">Submit application</button></form>',async(page,payload)=>{
+  const form=await readLeverForm(page),authorization=form.fields.find(f=>f.controlName==='cards[synthetic][authorization]'),sponsorship=form.fields.find(f=>f.controlName==='cards[synthetic][sponsorship]');
+  payload.fields=form.fields;payload.answers={[authorization.key]:{value:'Yes'},[sponsorship.key]:{value:'No'}};
+  assert.equal(authorization.required,false);assert.equal(sponsorship.required,false);
+  const result=await page.evaluate(fillApplication,payload);assert.equal(result.ok,true);assert.equal(result.filled,2);assert.equal(result.remaining,0);
+  assert.deepEqual(await page.locator('input[type=radio]').evaluateAll(inputs=>inputs.map(input=>({name:input.name,value:input.value,checked:input.checked}))),[
+   {name:'cards[synthetic][authorization]',value:'Yes',checked:true},{name:'cards[synthetic][authorization]',value:'No',checked:false},
+   {name:'cards[synthetic][sponsorship]',value:'Yes',checked:false},{name:'cards[synthetic][sponsorship]',value:'No',checked:true},{name:'cards[synthetic][sponsorship]',value:'Not Applicable',checked:false}
+  ]);
+  assert.equal(await page.evaluate(()=>window.__submissions),0);
+ });
  await fixture('lever','<h2>Product Manager</h2><form id="application-form"><div class="application-question"><label><span class="application-label">Name</span><input name="name"></label></div></form>',async(page,payload)=>{
   payload.fields=[{key:'name',controlName:'name',type:'text',label:'Name'}];payload.answers={name:{value:'Alex Example'}};
   assert.equal((await page.evaluate(fillApplication,{...payload,url:urls.lever+'?changed=1'})).ok,false);

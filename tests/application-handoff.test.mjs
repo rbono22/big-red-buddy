@@ -53,6 +53,23 @@ test('explicit manual recovery preserves an unconfirmed attempt and never requeu
  const retry=await createApplicationHandoff(s,{applicationId:'app',revision:3},{now:1200}),again=await redeemApplicationHandoff(s,{token:retry.token},{now:1300});
  assert.equal(again.status,'uncertain');assert.equal(again.priorSubmissionUnconfirmed,true);assert.equal((await s.get('liveApplications','app')).submitAttemptAt,attempt.submitAttemptAt);
 });
+test('manual recovery exports saved employment choices omitted by an older inspection without changing prior application answers',async()=>{
+ const {s,a}=await fixture();await saveCareerProfile(s,{workAuthorizationUS:'yes',sponsorship:'no'});
+ const auth={key:'auth',controlName:'cards[auth]',label:'Are you legally authorized to work in the United States?',type:'radio',required:false,options:['Yes','No']},sponsor={key:'sponsor',controlName:'cards[sponsor]',label:'Will you now or in the future require sponsorship for employment visa status',type:'radio',required:false,options:['Yes','No','Not Applicable']};
+ const attempt={...a,status:'uncertain',submitAttemptAt:'2026-11-13T04:14:37.069Z',profileHash:hash(await getCareerProfile(s)),form:{...a.form,fields:[...a.form.fields,auth,sponsor]},answers:{...a.answers,auth:{value:null,reviewed:true,source:'omitted optional field'}}};await s.put('liveApplications','app',attempt);
+ const created=await createApplicationHandoff(s,{applicationId:'app'}),payload=await redeemApplicationHandoff(s,{token:created.token});
+ assert.deepEqual(payload.answers.auth,{value:'Yes'});assert.deepEqual(payload.answers.sponsor,{value:'No'});
+ const after=await s.get('liveApplications','app');assert.deepEqual(after.answers,attempt.answers);assert.equal(after.status,'uncertain');assert.equal(after.submitAttemptAt,attempt.submitAttemptAt);assert.equal(after.quickAuthorizationExpiresAt,0);
+});
+test('handoff preserves explicit employment skips and per-application choices instead of overwriting them from the profile',async()=>{
+ for(const answer of [{value:null,reviewed:true,source:'student'},{value:'No',reviewed:true,source:'student'},{value:'No',reviewed:false,source:'AI draft'}]){
+  const {s,a}=await fixture();await saveCareerProfile(s,{workAuthorizationUS:'yes'});
+  const field={key:'auth',controlName:'cards[auth]',label:'Are you legally authorized to work in the United States?',type:'radio',required:false,options:['Yes','No']};
+  await s.put('liveApplications','app',{...a,profileHash:hash(await getCareerProfile(s)),form:{...a.form,fields:[...a.form.fields,field]},answers:{...a.answers,auth:answer}});
+  const created=await createApplicationHandoff(s,{applicationId:'app'}),payload=await redeemApplicationHandoff(s,{token:created.token});
+  assert.deepEqual(payload.answers.auth,answer.reviewed&&answer.value?{value:'No'}:undefined);
+ }
+});
 test('manual recovery cannot race a changed submission status or employer receipt',async()=>{
  for(const status of ['queued','submitting','submitted','uncertain']){
   const {s,a}=await fixture();await s.put('liveApplications','app',{...a,status:'uncertain',submitAttemptAt:'2026-11-13T04:14:37.069Z'});

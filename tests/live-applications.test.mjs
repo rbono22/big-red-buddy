@@ -41,6 +41,15 @@ test('reusable profile stores payroll, office and separate explicit communicatio
  assert.equal((await getCareerProfile(s.b)).plannedWorkLocation,'');await assert.rejects(saveCareerProfile(s.a,{officeThreeDays:'probably'}));
  await saveCareerProfile(s.a,{recruitingSMS:'unanswered'});await s.action('profile');assert.equal((await s.current()).answers.smsConsent,undefined);
 });
+test('guided employer questions save and reuse exact work eligibility and sponsorship choices',async t=>{
+ const fields=[{key:'auth',label:'Are you legally authorized to work in the United States?',type:'radio',required:false,options:['Yes','No']},{key:'sponsor',label:'Will you now or in the future require sponsorship for employment visa status',type:'radio',required:false,options:['Yes','No','Not Applicable']}];
+ const s=await setup(t,{form:{...FORM,fields}});
+ await s.action('answer',{field:0,choice:0});assert.equal((await getCareerProfile(s.a)).workAuthorizationUS,'yes');
+ await s.action('answer',{field:1,choice:1});assert.equal((await getCareerProfile(s.a)).sponsorship,'no');
+ assert.equal((await s.current()).status,'ready');assert.equal(s.sent.some(j=>j.type==='application-submit'),false);
+ const app=await s.current();await s.a.put('liveApplications',app.id,{...app,answers:{auth:{value:null,source:'omitted optional field',reviewed:true}},status:'collecting'});await s.action('profile');
+ const updated=await s.current();assert.equal(updated.answers.auth.value,'Yes');assert.equal(updated.answers.sponsor.value,'No');assert.equal(updated.status,'ready');
+});
 test('a real form is inspected once and saved demographics are not included',async t=>{
  const s=await setup(t);await s.a.put('career','demographics',{values:{disabilityStatus:'private'}});await startLiveApplication(s.a,s.queue,'ramp','again');assert.equal(s.sent.filter(j=>j.type==='application-inspect').length,1);assert.equal(s.sent.filter(j=>j.type==='application-submit').length,0);assert.equal((await s.current()).status,'collecting');assert.doesNotMatch(JSON.stringify(await s.current()),/disability|private/);
  await assert.rejects(startLiveApplication(s.b,s.queue,'ramp','foreign'),/not supported/);
