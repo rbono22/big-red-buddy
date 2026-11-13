@@ -515,6 +515,7 @@ test('career profile saves explicit facts only and keeps optional demographics s
   assert.equal(view.document.querySelector('#career-profile-veteranStatus'),null);
   view.document.querySelector('#career-profile-fullName').value = 'Explicit Student';
   view.document.querySelector('#career-profile-email').value = 'chosen@cornell.edu';
+  view.document.querySelector('#career-profile-currentCompany').value = 'Explicit Company';
   view.document.querySelector('#career-profile-plannedWorkLocation').value='New York City, New York, United States';
   selectOption(view.document.querySelector('#career-profile-officeThreeDays'),'local_nyc_sf');
   selectOption(view.document.querySelector('#career-profile-recruitingSMS'),'no');
@@ -523,7 +524,8 @@ test('career profile saves explicit facts only and keeps optional demographics s
   view.document.querySelector('#career-profile-form').dispatchEvent(new view.window.Event('submit', { bubbles: true, cancelable: true })); await settled();
   const request = view.requests.find(r => r.url === '/api/career/profile'), data = JSON.parse(request.options.body);
   assert.equal(data.fullName, 'Explicit Student'); assert.equal(data.email, 'chosen@cornell.edu'); assert.equal(data.workAuthorizationUS, 'yes');
-  assert.equal(data.sponsorship, 'unanswered'); assert.equal(data.veteranStatus, undefined); assert.equal(Object.keys(data).length, 15);
+  assert.equal(data.sponsorship, 'unanswered'); assert.equal(data.veteranStatus, undefined); assert.equal(Object.keys(data).length, 16);
+  assert.equal(data.currentCompany, 'Explicit Company');
   assert.equal(data.plannedWorkLocation,'New York City, New York, United States');assert.equal(data.officeThreeDays,'local_nyc_sf');assert.equal(data.recruitingSMS,'no');assert.equal(data.recruitingWhatsApp,'yes');
   assert.equal(request.options.headers['X-CSRF-Token'], 'fixture');
   assert.match(view.document.querySelector('.career-profile').textContent, /Nothing was sent to an employer/);

@@ -15,21 +15,22 @@ const draft=()=>({value:{answer:'My Python forecasting work connects with this r
 
 test('profile starts with unanswered eligibility fields and exposes only its allowlisted shape',async t=>{
   const store=(await database(t)).forUser('profile'),initial=await getCareerProfile(store);
-  assert.equal(initial.workAuthorizationUS,'unanswered');assert.equal(initial.sponsorship,'unanswered');assert.equal(initial.veteranStatus,'unanswered');assert.equal(initial.fullName,'');
+  assert.equal(initial.workAuthorizationUS,'unanswered');assert.equal(initial.sponsorship,'unanswered');assert.equal(initial.veteranStatus,'unanswered');assert.equal(initial.fullName,'');assert.equal(initial.currentCompany,'');
   await store.put('career','profile',{fullName:'Alex Example',accessToken:'must-stay-hidden',resumeText:'must-stay-hidden',source:'student-entered'});
   const safe=await getCareerProfile(store);assert.equal(safe.fullName,'Alex Example');assert.equal(safe.accessToken,undefined);assert.equal(safe.resumeText,undefined);assert.equal(safe.source,undefined);
 });
 
 test('profile saves explicit facts with tenant isolation and merges concurrent category edits',async t=>{
   const db=await database(t),a=db.forUser('a'),b=db.forUser('b');
-  await saveCareerProfile(a,{fullName:'Alex Example',workAuthorizationUS:'yes',sponsorship:'no',veteranStatus:'decline'});
+  await saveCareerProfile(a,{fullName:'Alex Example',currentCompany:'Student Example Company',workAuthorizationUS:'yes',sponsorship:'no',veteranStatus:'decline'});
   await Promise.all([saveCareerProfile(a,{phone:'+1 (555) 123-4567'}),saveCareerProfile(a,{availability:'After graduation'})]);
   const profile=await getCareerProfile(a);assert.equal(profile.phone,'+1 (555) 123-4567');assert.equal(profile.availability,'After graduation');assert.equal(profile.veteranStatus,'decline');assert.equal((await getCareerProfile(b)).workAuthorizationUS,'unanswered');assert.equal((await getCareerProfile(b)).fullName,'');
+  assert.equal(profile.currentCompany,'Student Example Company');assert.equal((await getCareerProfile(b)).currentCompany,'');
 });
 
 test('profile rejects unknown keys, unsafe URLs, inferred enums and overlong values without saving',async t=>{
   const store=(await database(t)).forUser('invalid');
-  for(const patch of [{userId:'other'}, {fullName:'x'.repeat(161)}, {workAuthorizationUS:true}, {sponsorship:'probably'}, {veteranStatus:'inferred'}, {email:'invalid'}, {phone:'none'}, {linkedin:'https://notlinkedin.com/x'}, {portfolio:'javascript:alert(1)'}, {portfolio:'https://user:password@example.com'}, {availability:'line\nline'}, {},null,[]])await assert.rejects(saveCareerProfile(store,patch),{status:400});
+  for(const patch of [{userId:'other'}, {fullName:'x'.repeat(161)}, {currentCompany:'x'.repeat(241)}, {currentCompany:'line\nline'}, {workAuthorizationUS:true}, {sponsorship:'probably'}, {veteranStatus:'inferred'}, {email:'invalid'}, {phone:'none'}, {linkedin:'https://notlinkedin.com/x'}, {portfolio:'javascript:alert(1)'}, {portfolio:'https://user:password@example.com'}, {availability:'line\nline'}, {},null,[]])await assert.rejects(saveCareerProfile(store,patch),{status:400});
   assert.equal(await store.get('career','profile'),null);
   const saved=await saveCareerProfile(store,{linkedin:'https://www.linkedin.com/in/example',portfolio:'https://example.com',veteranStatus:'non_veteran'});assert.equal(saved.veteranStatus,'non_veteran');
 });
@@ -46,8 +47,10 @@ test('resume review keeps exact supported contact candidates unconfirmed and nev
 test('hallucinated resume facts, protected candidate fields, and unmatched edits are discarded',async t=>{
   const store=(await database(t)).forUser('unverified');await seed(store);const response=review();
   response.value.facts.phone={value:'5551234567',evidence:'5551234567'};response.value.facts.workAuthorizationUS={value:'yes',evidence:'Cornell Tech graduate student.'};response.value.facts.fullName={value:'Different person',evidence:'Alex Example'};
+  response.value.facts.currentCompany={value:'Cornell Tech',evidence:'Cornell Tech graduate student.'};
   response.value.suggestions.push({original:'Led a team of 100 engineers.',suggested:'Led 100 engineers to success.',reason:'More compelling.'});
   const result=await reviewResume(store,{generate:async()=>response});assert.equal(result.facts.phone,undefined);assert.equal(result.facts.fullName,undefined);assert.equal(result.facts.workAuthorizationUS,undefined);assert.equal(result.suggestions.length,1);assert.ok(result.gaps.some(gap=>/matching resume passage/.test(gap)));assert.ok(result.gaps.some(gap=>/could not be verified/.test(gap)));
+  assert.equal(result.facts.currentCompany,undefined);
 });
 
 test('resume review rejects malformed output and a changed resume without retaining stale analysis',async t=>{

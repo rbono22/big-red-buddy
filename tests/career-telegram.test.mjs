@@ -80,6 +80,16 @@ test('apply and review use scoped durable preparation jobs with no employer subm
   assert.match(texts.map(p=>p.text).join('\n'),/draft only/);
   await s.a.delete('documents','resume');await assert.rejects(s.send('/resume_review',13),/resume first/);
 });
+test('applynow is an explicit private-chat command that starts direct inspection without drafting or referrals',async t=>{
+ const s=await setup(t),before=process.env.APPLICATION_BROWSER_ENABLED;process.env.APPLICATION_BROWSER_ENABLED='true';t.after(()=>{if(before===undefined)delete process.env.APPLICATION_BROWSER_ENABLED;else process.env.APPLICATION_BROWSER_ENABLED=before;});
+ await s.a.put('jobs','direct',{id:'direct',title:'Analyst',company:'Example',applyUrl:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply'});
+ await s.a.put('documents','resume',{name:'Resume.pdf',file:Buffer.from('%PDF-1.7 synthetic').toString('base64'),text:'Synthetic resume'});
+ assert.equal(await s.send('/applynow direct',20,{chat:{id:202,type:'private'}}),false);
+ await assert.rejects(s.send('/applynow job-b',21),/workspace/);
+ await s.send('/applynow direct',22);await s.send('/applynow direct',22);
+ const jobs=await s.jobs();assert.equal(jobs.filter(j=>j.type==='application-inspect').length,1);assert.equal(jobs.some(j=>j.type==='draft'||j.type==='telegram-leads'||j.type==='application-submit'),false);
+ assert.equal((await s.a.all('liveApplications'))[0].mode,'quick');
+});
 
 test('question workflow validates ownership, accepts short real questions, and deduplicates generation',async t=>{
   const s=await setup(t);

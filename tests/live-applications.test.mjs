@@ -122,6 +122,11 @@ test('explicit name parts reuse saved values; a full name is never silently spli
  await saveCareerProfile(s.a,{firstName:'Example',lastName:'Student'});await s.action('profile');assert.equal((await s.current()).answers.first.value,'Example');assert.equal((await s.current()).answers.last.value,'Student');
  assert.equal((await getCareerProfile(s.b)).firstName,'');
 });
+test('current company is reused only after an explicit saved profile value',async t=>{
+ const form={title:'Example role',consentText:'',fields:[{key:'org',label:'Current company',type:'text',profileField:'currentCompany',required:true,options:[]}]};
+ const s=await setup(t,{form});assert.equal((await s.current()).answers.org,undefined);
+ await saveCareerProfile(s.a,{currentCompany:'Student Example Company'});await s.action('profile');assert.equal((await s.current()).answers.org.value,'Student Example Company');assert.equal((await getCareerProfile(s.b)).currentCompany,'');
+});
 test('an explicit employer link queues inspection and learns its title without inventing a publication date',async t=>{
  const s=await setup(t),url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
  await startLiveApplicationFromURL(s.a,s.queue,url,'link');await startLiveApplicationFromURL(s.a,s.queue,url,'repeat-link');
