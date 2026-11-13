@@ -1,21 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {startLiveApplication,executeLiveApplication,handleLiveApplicationAction,handleLiveApplicationMessage,experienceSuggestion} from '../lib/live-applications.mjs';
+import {startLiveApplication,startLiveApplicationFromURL,executeLiveApplication,handleLiveApplicationAction,handleLiveApplicationMessage,experienceSuggestion} from '../lib/live-applications.mjs';
 import {ashbyApplicationURL,liveApplicationSupported,allowedAshbyResource} from '../lib/ashby-browser.mjs';
 import {saveCareerProfile,getCareerProfile} from '../lib/career.mjs';
 import {listApplicationTracker} from '../lib/application-tracker.mjs';
 import {validateTelegramReplyMarkup} from '../lib/telegram-delivery.mjs';
+import {applicationURL,applicationProviderFor,liveApplicationSupported as providerSupported} from '../lib/application-providers.mjs';
+import {editDemographics} from '../lib/demographics.mjs';
 const FORM=JSON.parse(await readFile(new URL('./fixtures/ramp-application-form.json',import.meta.url),'utf8'));
 const APP_URL='https://jobs.ashbyhq.com/ramp/a84ae1e2-8c88-4e05-9cb6-fa3e11b55aeb/application';
 function memory(userId){const rows=new Map();return {userId,get:async(b,k)=>structuredClone(rows.get(b+':'+k)||null),put:async(b,k,v)=>rows.set(b+':'+k,structuredClone(v)),delete:async(b,k)=>rows.delete(b+':'+k),all:async b=>[...rows].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v)),compareAndSet:async(b,k,old,next)=>{if(JSON.stringify(rows.get(b+':'+k)||null)!==JSON.stringify(old))return false;rows.set(b+':'+k,structuredClone(next));return true;}};}
-async function setup(t,{profile=true}={}){
+async function setup(t,{profile=true,form=FORM,url=APP_URL,company='Ramp',demographics}={}){
  const before={APPLICATION_BROWSER_ENABLED:process.env.APPLICATION_BROWSER_ENABLED,APP_ORIGIN:process.env.APP_ORIGIN,PILOT_SHEET_ID:process.env.PILOT_SHEET_ID};t.after(()=>{for(const [k,v]of Object.entries(before)){if(v===undefined)delete process.env[k];else process.env[k]=v;}});process.env.APPLICATION_BROWSER_ENABLED='true';process.env.APP_ORIGIN='https://app.bigredbuddy.com';delete process.env.PILOT_SHEET_ID;
  const a=memory('alice'),b=memory('bob'),sent=[],queue={enqueue:async(userId,type,payload,options)=>{const previous=sent.find(j=>j.options.idempotencyKey===options.idempotencyKey);if(previous)return previous;const job={id:String(sent.length),userId,type,payload,options};sent.push(job);if(type==='telegram-send')validateTelegramReplyMarkup(payload.replyMarkup);return job;}};
- const db={forUser:id=>id==='alice'?a:b};await a.put('jobs','ramp',{id:'ramp',title:FORM.title,company:'Ramp',applyUrl:APP_URL});await a.put('documents','resume',{name:'Example.pdf',file:Buffer.from('%PDF-1.7\nsynthetic').toString('base64'),text:'Example Student\nProduct Manager at Example, 2020 to 2025.'});await a.put('secrets','telegram',{chatId:101,linkedAt:'link-1'});
+ const db={forUser:id=>id==='alice'?a:b};await a.put('jobs','ramp',{id:'ramp',title:form.title,company,applyUrl:url});await a.put('documents','resume',{name:'Example.pdf',file:Buffer.from('%PDF-1.7\nsynthetic').toString('base64'),text:'Example Student\nProduct Manager at Example, 2020 to 2025.'});await a.put('secrets','telegram',{chatId:101,linkedAt:'link-1'});
  if(profile)await saveCareerProfile(a,{fullName:'Example Student',email:'student@example.edu',phone:'+1 212 555 1234',linkedin:'https://www.linkedin.com/in/example',plannedWorkLocation:'New York City, New York, United States',officeThreeDays:'local_nyc_sf',recruitingSMS:'no',recruitingWhatsApp:'no'});
+ if(demographics)await editDemographics(a,demographics);
  const current=async()=>(await a.all('liveApplications'))[0],action=async(op,extra={})=>{const app=await current();return handleLiveApplicationAction(a,queue,{id:app.id,revision:app.revision,op,...extra},'action:'+sent.length);};
- const run=async(type,overrides={})=>{const task=sent.filter(j=>j.type===type).at(-1);return executeLiveApplication(db,task,{queue,inspect:async()=>structuredClone(FORM),analyze:async()=>({roles:[],analyzed:true}),...overrides});};
+ const run=async(type,overrides={})=>{const task=sent.filter(j=>j.type===type).at(-1);return executeLiveApplication(db,task,{queue,inspect:async()=>structuredClone(form),analyze:async()=>({roles:[],analyzed:true}),...overrides});};
  await startLiveApplication(a,queue,'ramp','start');await run('application-inspect');
  return {a,b,db,queue,sent,current,action,run};
 }
@@ -80,4 +83,61 @@ test('queued application answers cannot be delivered after revision or chat bind
  const {dispatchQueuedTelegram}=await import('../lib/telegram-delivery.mjs');const s=await setup(t),message=s.sent.filter(j=>j.type==='telegram-send').at(-1);let calls=0;const send=async()=>{calls++;return {result:{message_id:100}};};
  let a=await s.current();await s.a.put('liveApplications',a.id,{...a,revision:a.revision+1});assert.equal((await dispatchQueuedTelegram(s.a,message,{send})).reason,'application-changed');assert.equal(calls,0);
  await s.a.put('liveApplications',a.id,a);await s.a.put('secrets','telegram',{chatId:202,linkedAt:'new'});assert.equal((await dispatchQueuedTelegram(s.a,message,{send})).reason,'telegram-link-changed');assert.equal(calls,0);
+});
+
+test('provider registry keeps existing Ashby records compatible and rejects provider swaps',()=>{
+ assert.equal(applicationProviderFor({url:APP_URL}).id,'ashby');
+ assert.throws(()=>applicationProviderFor({url:APP_URL,provider:'lever'}),/UNSUPPORTED_EMPLOYER/);
+ assert.equal(applicationURL('https://jobs.lever.co.evil.test/company/aaaa'),'');
+ assert.equal(applicationURL('https://job-boards.greenhouse.io/reddit/jobs/8023563?gh_src=example'),'https://job-boards.greenhouse.io/reddit/jobs/8023563');
+ assert.equal(applicationProviderFor({provider:'workable',url:'https://apply.workable.com/valsoft-corp/j/4560CF5DD0/apply/'}).label,'Workable');
+ assert.equal(applicationURL('https://apply.workable.com/other/j/4560CF5DD0/apply/'),'');
+});
+test('large employer dropdowns are searchable and paginated without exceeding Telegram limits',async t=>{
+ const choices=Array.from({length:249},(_,i)=>`Country ${i+1}`),form={title:'Example role',consentText:'',fields:[{key:'country',label:'Country dialing code',type:'select',required:true,options:choices}]};
+ const s=await setup(t,{form,url:'https://job-boards.greenhouse.io/example/jobs/123456',company:'Example'});
+ assert.equal((await s.current()).provider,'greenhouse');assert.ok(providerSupported(await s.a.get('jobs','ramp')));
+ let message=s.sent.filter(j=>j.type==='telegram-send').at(-1);assert.ok(message.payload.replyMarkup.inline_keyboard.length<=12);assert.match(message.payload.text,/Country 5/);assert.doesNotMatch(message.payload.text,/Country 6\b/);
+ await s.action('choices',{field:0,offset:5});message=s.sent.at(-1);assert.match(message.payload.text,/Country 6/);
+ await handleLiveApplicationMessage(s.a,s.queue,{chat:{id:101,type:'private'},text:'Country 24'},800);
+ // Exact labels are immediately accepted; partial labels narrow the menu.
+ assert.equal((await s.current()).answers.country.value,'Country 24');
+ await s.action('edit-field',{field:0});await handleLiveApplicationMessage(s.a,s.queue,{chat:{id:101,type:'private'},text:'249'},801);assert.equal((await s.current()).answers.country.value,'Country 249');
+});
+test('multi-select answers remain unreviewed until Done and stale buttons cannot alter them',async t=>{
+ const form={title:'Example role',consentText:'',fields:[{key:'choices',label:'Choose up to two',type:'select',multiple:true,maxChoices:2,required:true,options:['One','Two','Three']}]};
+ const s=await setup(t,{form,url:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply',company:'Example'});
+ let before=await s.current();await s.action('answer',{field:0,choice:0});assert.equal((await s.current()).answers.choices,undefined);
+ await assert.rejects(handleLiveApplicationAction(s.a,s.queue,{id:before.id,revision:before.revision,op:'answer',field:0,choice:1},'stale'),/changed/);
+ await s.action('answer',{field:0,choice:1});await assert.rejects(s.action('answer',{field:0,choice:2}),/at most 2/);
+ await s.action('selection-done',{field:0});assert.equal((await s.current()).answers.choices.value,'One\nTwo');assert.equal((await s.current()).status,'ready');
+ await s.action('submit');let called=0;await s.run('application-submit',{submit:async({answers,beforeSubmit})=>{assert.equal(answers.choices.value,'One\nTwo');await beforeSubmit();called++;return {confirmedAt:new Date().toISOString(),confirmation:'Application submitted'};}});assert.equal(called,1);assert.equal((await s.current()).status,'submitted');
+});
+test('explicit name parts reuse saved values; a full name is never silently split',async t=>{
+ const form={title:'Example role',consentText:'',fields:[{key:'first',label:'First name',type:'text',profileField:'firstName',required:true,options:[]},{key:'last',label:'Last name',type:'text',profileField:'lastName',required:true,options:[]}]};
+ const s=await setup(t,{form});assert.equal((await s.current()).answers.first,undefined);
+ await saveCareerProfile(s.a,{firstName:'Example',lastName:'Student'});await s.action('profile');assert.equal((await s.current()).answers.first.value,'Example');assert.equal((await s.current()).answers.last.value,'Student');
+ assert.equal((await getCareerProfile(s.b)).firstName,'');
+});
+test('an explicit employer link queues inspection and learns its title without inventing a publication date',async t=>{
+ const s=await setup(t),url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
+ await startLiveApplicationFromURL(s.a,s.queue,url,'link');await startLiveApplicationFromURL(s.a,s.queue,url,'repeat-link');
+ assert.equal(s.sent.filter(j=>j.type==='application-inspect').length,2);assert.equal(s.sent.filter(j=>j.type==='application-submit').length,0);
+ let linkJob=(await s.a.all('jobs')).find(j=>j.source==='student-link');assert.equal(linkJob.publishedAt,undefined);assert.equal(linkJob.titlePending,true);
+ await s.run('application-inspect',{inspect:async()=>({title:'Product Manager',consentText:'',fields:[{key:'name',profileField:'fullName',label:'Name',type:'text',required:true,options:[]}]})});
+ linkJob=await s.a.get('jobs',linkJob.id);assert.equal(linkJob.title,'Product Manager');assert.equal(linkJob.titlePending,false);assert.equal(linkJob.publishedAt,undefined);
+ const app=(await s.a.all('liveApplications')).find(a=>a.url===url);assert.equal(app.title,'Product Manager');assert.equal(app.status,'ready');assert.equal(app.provider,'lever');
+ assert.equal((await s.b.all('jobs')).length,0);await assert.rejects(startLiveApplicationFromURL(s.a,s.queue,'https://evil.example/apply','bad'),/not supported/);
+});
+test('reference telephone questions never reuse the applicant phone',async t=>{
+ const form={title:'Example role',consentText:'',fields:[{key:'ref-phone',label:'Reference telephone number',type:'tel',required:true,options:[]}]};
+ const s=await setup(t,{form});assert.equal((await s.current()).answers['ref-phone'],undefined);
+});
+test('saved demographic suggestions need acceptance and cannot use deleted or changed preferences',async t=>{
+ const form={title:'Example role',consentText:'',fields:[{key:'gender',label:'Gender identity',type:'select',required:true,options:['Man','Woman','Non-binary','Prefer not to answer']}]};
+ const s=await setup(t,{form,demographics:{gender:'male',disabilityStatus:'yes'}});let a=await s.current();
+ assert.equal(a.drafts.gender.value,'Man');assert.equal(a.drafts.gender.reviewed,false);assert.equal(a.answers.gender,undefined);assert.doesNotMatch(JSON.stringify(a),/disabilityStatus/);
+ await editDemographics(s.a,{gender:'female'});await s.action('use-draft',{field:0});a=await s.current();assert.equal(a.answers.gender,undefined);assert.equal(a.drafts.gender.value,'Woman');
+ await editDemographics(s.a,{gender:'unanswered'});await s.action('use-draft',{field:0});a=await s.current();assert.equal(a.answers.gender,undefined);assert.equal(a.drafts.gender,undefined);
+ await s.action('answer',{field:0,choice:3});assert.equal((await s.current()).answers.gender.value,'Prefer not to answer');assert.equal((await s.current()).status,'ready');
 });

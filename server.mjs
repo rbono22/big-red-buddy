@@ -1,4 +1,4 @@
-import {liveApplicationSupported} from './lib/ashby-browser.mjs';
+import {liveApplicationSupported} from './lib/application-providers.mjs';
 import {startLiveApplication} from './lib/live-applications.mjs';
 import {personalCalendarStatus,savePersonalCalendars} from './lib/personal-calendar.mjs';
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';

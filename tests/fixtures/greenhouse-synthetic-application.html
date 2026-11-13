@@ -1,0 +1,20 @@
+<!doctype html><html><head><style>.visually-hidden{position:absolute;width:1px;height:1px;clip-path:inset(50%)}[aria-hidden="true"] input{display:none}.select__option{padding:8px}.hidden{display:none}</style></head><body>
+<h1>Example Analyst</h1>
+<form id="application-form">
+ <label for="first_name">First Name*</label><input id="first_name" aria-required="true">
+ <label for="last_name">Last Name*</label><input id="last_name" aria-required="true">
+ <label for="email">Email*</label><input id="email" aria-required="true">
+ <label for="phone">Phone</label><input id="phone" type="tel">
+ <div class="select"><label for="country">Country*</label><div class="select-shell"><div class="select__value-container"><input id="country" role="combobox" aria-required="true" aria-expanded="false"></div><input required tabindex="-1" aria-hidden="true"></div></div>
+ <div class="select"><label for="candidate-location">Location (City)*</label><div class="select-shell"><div class="select__value-container"><input id="candidate-location" role="combobox" aria-required="true" aria-expanded="false"></div><input required tabindex="-1" aria-hidden="true"></div></div>
+ <div class="file-upload" role="group" aria-labelledby="upload-label-resume" aria-required="true"><div id="upload-label-resume">Resume/CV*</div><label for="resume">Attach</label><input id="resume" type="file"></div>
+ <label for="cover_letter_text">Cover Letter</label><textarea id="cover_letter_text"></textarea>
+ <div class="select"><label for="work_auth">Authorized to work in the U.S.?*</label><div class="select-shell"><div class="select__value-container"><input id="work_auth" role="combobox" aria-required="true" aria-expanded="false"></div><input required tabindex="-1" aria-hidden="true"></div></div>
+ <div class="select"><label for="identity">Please select up to 2 identities</label><div class="select-shell"><div class="select__value-container select__value-container--is-multi"><input id="identity" role="combobox" aria-expanded="false"></div></div></div>
+ <label for="notice">I agree to the privacy notice*</label><input id="notice" type="checkbox" required>
+ <label for="website">Personal Website</label><input id="website">
+ <label for="source">How did you hear about us?</label><select id="source"><option value="">Select...</option value="referral">Referral</option><option value="other">Other</option></select>
+ <fieldset><legend>Contact preference</legend><input id="contact_email" name="contact" type="radio"><label for="contact_email">Email</label><input id="contact_phone" name="contact" type="radio"><label for="contact_phone">Phone</label></fieldset>
+ <p>Example privacy notice. We use these answers for recruiting.</p><a href="https://example.org/privacy">Privacy notice</a>
+ <button type="submit">Submit application</button>
+</form></body></html>
