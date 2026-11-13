@@ -60,6 +60,30 @@ test('newest received edition wins shuffled results and older newsletters are ne
  assert.equal((await s.client.listNews(store)).providers[0].latest.receivedAt,new Date(NOW-1000).toISOString());
 });
 
+test('Daily Pitch editorial subjects from its exact news sender are discovered and validated against the body',async()=>{
+ const sender='PitchBook News <NEWS-NOREPLY@news.pitchbook.com>',body=`The Daily Pitch\n${EVIDENCE}`;
+ const s=service({messages:[message('aa',{age:DAY,subject:'A previous market briefing',sender,listId:'',body}),message('bb',{subject:'Private markets in focus',sender,listId:'',body})]}),store=await enable(s.client,student(),['dailypitch']);
+ const out=await s.client.syncNews(store);assert.equal(out.processed,1);
+ assert.match(s.calls.find(call=>call.stage==='list').query,/\{from:news-noreply@news\.pitchbook\.com \(from:\(pitchbook\.com\)/);
+ assert.deepEqual(s.calls.filter(call=>call.stage==='full').map(call=>call.id),['bb']);assert.equal(s.modelInputs[0],body);
+ assert.equal((await s.client.listNews(store)).providers.find(p=>p.id==='dailypitch').latest.subject,'Private markets in focus');
+ await s.client.syncNews(store);assert.equal(s.modelInputs.length,1);
+});
+
+test('the exact PitchBook sender only permits body inspection, never summary of unrelated or unselected mail',async()=>{
+ const sender='PitchBook News <news-noreply@news.pitchbook.com>';
+ const unrelated=service({messages:[message('aa',{subject:'Your saved company search alert',sender,listId:'Saved alerts',body:EVIDENCE})]}),store=await enable(unrelated.client,student(),['dailypitch']);
+ assert.equal((await unrelated.client.syncNews(store)).processed,0);assert.equal(unrelated.modelInputs.length,0);assert.deepEqual(await store.all('newsSummaries'),[]);
+ const unselected=service({messages:[message('bb',{subject:'Private markets in focus',sender,listId:'',body:`The Daily Pitch\n${EVIDENCE}`})]});
+ await unselected.client.syncNews(await enable(unselected.client));assert.equal(unselected.calls.filter(call=>call.stage==='full').length,0);assert.equal(unselected.modelInputs.length,0);
+});
+
+test('PitchBook sender shortcut rejects lookalikes, different mailboxes and multiple sender addresses',async()=>{
+ const senders=['news-noreply@news.pitchbook.com.evil.test','news-noreply@other.pitchbook.com','other@news.pitchbook.com','PitchBook News <news-noreply@news.pitchbook.com>, attacker@example.test','"news-noreply@news.pitchbook.com" <attacker@example.test>'];
+ const s=service({messages:senders.map((sender,i)=>message(`a${i}`,{subject:'Private markets in focus',sender,listId:'',body:`The Daily Pitch\n${EVIDENCE}`}))}),store=await enable(s.client,student(),['dailypitch']);
+ assert.equal((await s.client.syncNews(store)).processed,0);assert.equal(s.calls.filter(call=>call.stage==='full').length,0);assert.equal(s.modelInputs.length,0);
+});
+
 test('two opted-in providers get at most one current edition each rather than two editions from one publisher',async()=>{
  const s=service({messages:[message('11',{age:DAY}),message('22',{age:1000}),message('33',{age:2000,subject:'The Daily Pitch',sender:'news@pitchbook.com',listId:'The Daily Pitch <pitchbook.com>',body:`The Daily Pitch\n${EVIDENCE}`}),message('44',{age:2*DAY,subject:'The Daily Pitch',sender:'news@pitchbook.com',listId:'The Daily Pitch <pitchbook.com>',body:`The Daily Pitch\n${EVIDENCE}`})]}),store=await enable(s.client,student(),['wsj10point','dailypitch']);
  await s.client.syncNews(store);assert.deepEqual(s.calls.filter(call=>call.stage==='full').map(call=>call.id).sort(),['22','33']);assert.equal(s.modelInputs.length,2);
