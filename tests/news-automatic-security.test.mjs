@@ -4,6 +4,7 @@ import {createNews} from '../lib/news.mjs';
 import {EVENT_EMAIL_SCOPE} from '../lib/auth.mjs';
 import {readNotificationPreferences} from '../lib/notification-preferences.mjs';
 import {createPrivateEmailReader} from '../lib/event-email.mjs';
+import {idFor} from '../lib/domain.mjs';
 
 const NOW=Date.parse('2026-11-12T15:00:00Z'),now=()=>NOW,DAY=86400000;
 const EVIDENCE='Business leaders are postponing expansion as they evaluate changing market conditions and uncertain overseas demand.';
@@ -82,6 +83,27 @@ test('PitchBook sender shortcut rejects lookalikes, different mailboxes and mult
  const senders=['news-noreply@news.pitchbook.com.evil.test','news-noreply@other.pitchbook.com','other@news.pitchbook.com','PitchBook News <news-noreply@news.pitchbook.com>, attacker@example.test','"news-noreply@news.pitchbook.com" <attacker@example.test>'];
  const s=service({messages:senders.map((sender,i)=>message(`a${i}`,{subject:'Private markets in focus',sender,listId:'',body:`The Daily Pitch\n${EVIDENCE}`}))}),store=await enable(s.client,student(),['dailypitch']);
  assert.equal((await s.client.syncNews(store)).processed,0);assert.equal(s.calls.filter(call=>call.stage==='full').length,0);assert.equal(s.modelInputs.length,0);
+});
+
+test('a rejected exact-sender message cannot hide a valid edition on later refreshes',async()=>{
+ const sender='PitchBook News <news-noreply@news.pitchbook.com>',body=`The Daily Pitch\n${EVIDENCE}`;
+ const s=service({messages:[message('aa',{age:DAY,subject:'Private markets in focus',sender,listId:'',body}),message('bb',{subject:'Your saved company search alert',sender,listId:'Saved alerts',body:'PRIVATE UNRELATED ALERT BODY'})]}),store=await enable(s.client,student(),['dailypitch']);
+ const first=await s.client.syncNews(store);assert.equal(first.read,1);assert.equal(first.processed,0);assert.equal(s.modelInputs.length,0);
+ const rejection=await store.get('newsMessages',idFor('gmail-news',grant.subject,'bb'));
+ assert.equal(rejection.status,'not-newsletter');assert.equal(rejection.provider,'dailypitch');assert.doesNotMatch(JSON.stringify([...store.records]),/PRIVATE UNRELATED ALERT BODY/);
+ assert.equal((await store.get('settings','newsEmail')).latestReceivedAt.dailypitch,undefined,'rejection does not advance the accepted-edition watermark');
+ const second=await s.client.syncNews(store);assert.equal(second.read,1);assert.equal(second.processed,1);assert.deepEqual(s.modelInputs,[body]);
+ const third=await s.client.syncNews(store);assert.equal(third.read,0);assert.equal(third.processed,0);
+ assert.deepEqual(s.calls.filter(call=>call.stage==='full').map(call=>call.id),['bb','aa']);assert.equal((await store.all('newsSummaries')).length,1);
+});
+
+test('rejected-message markers are scoped to both the mailbox and selected provider',async()=>{
+ const sender='PitchBook News <news-noreply@news.pitchbook.com>',body=`The Daily Pitch\n${EVIDENCE}`;
+ for(const [subject,provider] of [['another-mailbox','dailypitch'],[grant.subject,'wsj10point']]){
+  const s=service({messages:[message('aa',{subject:'Private markets in focus',sender,listId:'',body})]}),store=await enable(s.client,student(),['dailypitch']),id=idFor('gmail-news',subject,'aa');
+  await store.put('newsMessages',id,{id,provider,status:'not-newsletter',createdAt:new Date(NOW).toISOString()});
+  assert.equal((await s.client.syncNews(store)).processed,1);assert.deepEqual(s.modelInputs,[body]);
+ }
 });
 
 test('two opted-in providers get at most one current edition each rather than two editions from one publisher',async()=>{
