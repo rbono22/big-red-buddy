@@ -1,6 +1,6 @@
 /** Serialized into the exact employer tab after a user clicks the extension. Never submits. */
 export async function fillApplication(payload){
- const result={ok:false,filled:0,remaining:0,skipped:[]};
+ const result={ok:false,filled:0,remaining:0,skipped:[],priorSubmissionUnconfirmed:payload?.priorSubmissionUnconfirmed===true};
  const normalize=value=>String(value||'').replace(/[✱*]/g,'').replace(/\s+/g,' ').trim();
  const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
  if(payload?.version!==1||location.href!==payload.url||payload.expiresAt<=Date.now()||!Array.isArray(payload.fields)||payload.fields.length>70)return {...result,error:'The employer address changed. Reopen the handoff from BRB.'};
@@ -79,8 +79,8 @@ export async function fillApplication(payload){
  }
  result.remaining=result.skipped.length;result.ok=true;
  const banner=document.createElement('aside');banner.id='brb-application-helper';banner.setAttribute('role','status');banner.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:380px;background:white;color:#222;border:2px solid #b31b1b;border-radius:10px;padding:16px;font:14px/1.5 Arial,sans-serif;box-shadow:0 4px 18px #0002';
- const heading=document.createElement('strong');heading.textContent=`BRB filled ${result.filled} fields`;banner.append(heading);
- const summary=document.createElement('p');summary.textContent=`${result.remaining?`${result.remaining} items need your attention. `:''}Check your answers and upload status, then submit on this page. BRB has not submitted this application.`;banner.append(summary);
+ const heading=document.createElement('strong');heading.textContent=`BRB filled ${result.filled} ${result.filled===1?'field':'fields'}`;banner.append(heading);
+ const summary=document.createElement('p');summary.textContent=`${result.remaining?`${result.remaining} items need your attention. `:''}${result.priorSubmissionUnconfirmed?'A previous submission attempt could not be confirmed and may already have succeeded. Check employer confirmation before submitting again. This helper only filled fields; it did not submit.':'Check your answers and upload status, then submit on this page. This helper did not submit this application.'}`;banner.append(summary);
  if(result.skipped.length){const list=document.createElement('ul');for(const item of result.skipped.slice(0,8)){const row=document.createElement('li');row.textContent=normalize(item.label);list.append(row);}banner.append(list);}
  const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='Close';dismiss.onclick=()=>banner.remove();banner.append(dismiss);document.body.append(banner);return result;
 }

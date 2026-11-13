@@ -1273,6 +1273,14 @@ test('application browser handoff page explains setup without creating a secret 
  view.navigate('application-handoff/<img src=x onerror=bad()>');assert.match(view.document.querySelector('h1').textContent,/Open a fresh application link/);assert.equal(view.document.querySelector('#main img'),null);
 });
 
+test('browser handoff preserves an unconfirmed submission warning and starts from the BRB tab',async()=>{
+ const fixture=designFixture();fixture.applicationTracker=[{id:'tracker',liveApplicationId:'uncertain-application',liveApplicationStatus:'uncertain',title:'Analyst',company:'Example',status:'needs_attention'}];
+ const view=await renderDesignFixture(fixture);view.navigate('application-handoff/uncertain-application');
+ const panel=view.document.querySelector('#application-handoff');assert.match(panel.querySelector('[role="alert"]').textContent,/Previous submission unconfirmed/);assert.match(panel.textContent,/Stay on this BRB page/);assert.match(panel.textContent,/B helper icon/);assert.match(panel.textContent,/does not click Submit/);
+ assert.equal(view.requests.some(r=>r.options?.method==='POST'),false);
+ view.navigate('application-handoff/different-application');assert.equal(view.document.querySelector('#application-handoff [role="alert"]'),null);
+});
+
 test('Cornell sign-in preserves only a valid browser handoff destination without loading student data',async()=>{
  for(const hash of ['#application-handoff/fixture-application','#application-handoff/evil?next=https://example.org','#application-handoff/<img>']){
   const view=await renderDesignFixture(designFixture(),{'/api/session':{user:null,googleConfigured:true,devEnabled:false}},{location:{hash,href:''}});
@@ -1296,7 +1304,7 @@ test('late saved-answer deletions never erase or expose another signed-in studen
 });
 
 test('browser handoff tracker rows continue on the safe owned application link without claiming submission',async()=>{
- const fixture=designFixture();fixture.applicationTracker=[{id:'tracker',title:'Analyst',company:'Example',status:'needs_attention',statusLabel:'Continue in your browser',source:'telegram',liveApplicationId:'app:fixture_1',liveApplicationStatus:'browser_handoff',applyUrl:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply'}];
+ const fixture=designFixture();fixture.applicationTracker=[{id:'tracker',title:'Analyst',company:'Example',status:'needs_attention',statusLabel:'Continue in your browser',source:'telegram',liveApplicationId:'app:fixture_1',liveApplicationStatus:'browser_handoff',browserHandoffAvailable:true,applyUrl:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply'}];
  const view=await renderDesignFixture(fixture);view.navigate('careers');clickUI(view,'[data-action="career-tab"][data-tab="applications"]');
  const tracker=view.document.querySelector('#application-tracker'),link=[...tracker.querySelectorAll('a')].find(a=>a.textContent==='Continue in my browser');assert.ok(link);assert.equal(link.getAttribute('href'),'/#application-handoff/app:fixture_1');assert.match(tracker.textContent,/Finish and submit on the employer’s page\. BRB has not confirmed a submission/);assert.doesNotMatch(tracker.textContent,/Continue in Telegram with/);assert.equal(tracker.querySelector('[data-action="application-tracker-status"]'),null);
  fixture.applicationTracker[0].liveApplicationId='unsafe?token=private';const invalid=await renderDesignFixture(fixture);invalid.navigate('careers');assert.equal(Boolean(invalid.document.querySelector('#application-tracker a[href*="application-handoff"]')),false);assert.doesNotMatch(invalid.document.querySelector('#application-tracker').innerHTML,/token=private/);

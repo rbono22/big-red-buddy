@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Big Red Buddy - Application Helper",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fill a BRB application in your own browser. You finish and submit on the employer website.",
   "permissions": ["activeTab", "scripting"],
   "host_permissions": [

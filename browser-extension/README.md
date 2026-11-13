@@ -18,6 +18,8 @@ Use this optional Chrome extension when an employer needs you to finish in your 
 
 An ordinary employer link cannot carry a previously filled server-side browser session. This helper transfers only the current application’s accepted answers and selected documents to a new employer tab on your computer. Unsupported controls stay for you to complete. If an employer changes a question or the application changes in BRB, open a fresh handoff.
 
+If BRB could not confirm a previous submission attempt, the helper can still fill the form for you to inspect. The application stays marked unconfirmed. Check for the employer’s confirmation before submitting again, because the earlier attempt may already have succeeded. The helper never retries that submission.
+
 ## Data handling and permissions
 
 - Runs only when you click its button; no browsing monitor or automatic application submission.

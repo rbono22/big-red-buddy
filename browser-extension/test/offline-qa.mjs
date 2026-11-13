@@ -45,6 +45,13 @@ try{
   assert.equal((await page.evaluate(fillApplication,{...payload,url:urls.lever+'?changed=1'})).ok,false);
   assert.equal((await page.evaluate(fillApplication,{...payload,title:'Different Job'})).ok,false);assert.equal(await page.locator('input').inputValue(),'');
  });
+ await fixture('lever','<h2>Product Manager</h2><form id="application-form"><div class="application-question"><label><span class="application-label">Name</span><input name="name"></label></div><button type="submit">Submit application</button></form>',async(page,payload)=>{
+  payload.priorSubmissionUnconfirmed=true;payload.status='uncertain';payload.fields=[{key:'name',controlName:'name',type:'text',label:'Name'}];payload.answers={name:{value:'Alex Example'}};
+  assert.equal((await page.evaluate(fillApplication,{...payload,url:urls.lever+'?changed=1'})).ok,false);assert.equal(await page.locator('input').inputValue(),'');
+  const result=await page.evaluate(fillApplication,payload);assert.equal(result.ok,true);assert.equal(result.filled,1);assert.equal(result.priorSubmissionUnconfirmed,true);assert.equal(await page.locator('input').inputValue(),'Alex Example');
+  const banner=await page.locator('#brb-application-helper').innerText();assert.match(banner,/previous submission attempt could not be confirmed and may already have succeeded/);assert.match(banner,/Check employer confirmation before submitting again/);assert.match(banner,/This helper only filled fields; it did not submit/);assert.doesNotMatch(banner,/BRB has not submitted/);
+  await page.locator('#brb-application-helper').screenshot({path:'/private/tmp/brb-handoff-uncertain-qa.png'});
+ });
  await fixture('greenhouse','<h1>Product Manager</h1><form id="application-form"><label for="first_name">First name *</label><input id="first_name"><span id="resume-label">Resume *</span><div class="file-upload" aria-labelledby="resume-label"><input type="file" id="resume"></div><fieldset><legend>Can you relocate?</legend><label for="yes">Yes</label><input type="radio" name="move" id="yes"><label for="no">No</label><input type="radio" name="move" id="no"></fieldset></form>',async(page,payload)=>{
   payload.fields=[{key:'name',controlId:'first_name',label:'First name',type:'text'},{key:'_systemfield_resume',controlId:'resume',label:'Resume',type:'file',document:'resume'},{key:'move',controlId:'yes',radioIds:['yes','no'],label:'Can you relocate?',type:'radio',options:['Yes','No']}];payload.answers={name:{value:'Alex'},_systemfield_resume:{value:'Resume.pdf'},move:{value:'No'}};
   payload.documents={...documents,resume:{...documents.resume,sha256:'0'.repeat(64)}};

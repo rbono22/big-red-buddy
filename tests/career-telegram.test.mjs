@@ -35,6 +35,44 @@ test('job link uses the owned job application URL without a resume or submission
  assert.equal((await s.a.all('applicationTracker')).length,0);
 });
 
+test('job options offer BRB autofill for the bound application without starting or retrying submission',async t=>{
+ const before=process.env.APPLICATION_BROWSER_ENABLED;process.env.APPLICATION_BROWSER_ENABLED='true';t.after(()=>{if(before===undefined)delete process.env.APPLICATION_BROWSER_ENABLED;else process.env.APPLICATION_BROWSER_ENABLED=before;});
+ const s=await setup(t),url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
+ await s.a.put('jobs','job-a',{id:'job-a',title:'Analyst',company:'Example',applyUrl:url});
+ for(const [i,status] of ['collecting','ready','browser_handoff','uncertain','queued','submitting','submitted','needs_attention'].entries()){
+  const application={id:'application-a',jobId:'job-a',url,chatId:'101',linkedAt:'',status,revision:i+1,...(status==='needs_attention'?{}:{form:{fields:[{key:'name',label:'Name',type:'text'}]}}),answers:{name:{value:'Student',reviewed:true}},...(status==='uncertain'?{submitAttemptAt:'2026-11-13T04:14:37Z',error:'Receipt unconfirmed'}:{})};
+  await s.a.put('liveApplications',application.id,application);
+  await s.send('/job job-a',100+i);await s.send('/job job-a',100+i);
+  const messages=await s.jobs();assert.equal(messages.length,i+1);assert.ok(messages.every(j=>j.type==='telegram-send'));
+  // Locate by revision because queue metadata need not expose its idempotency key.
+  const cards=await Promise.all(messages.map(s.payload)),card=cards.find(p=>p.liveApplicationRevision===i+1),buttons=card.replyMarkup.inline_keyboard.flat();
+  const autofill=buttons.find(b=>b.text==='Fill application in my browser');
+  assert.equal(!!autofill,['collecting','ready','browser_handoff','uncertain'].includes(status));
+  if(autofill)assert.ok(autofill.url.endsWith('/#application-handoff/application-a'));
+  assert.equal(buttons.find(b=>b.text==='Open blank employer form').url,url);
+  assert.equal(card.expectedChatId,'101');assert.equal(card.liveApplicationId,application.id);
+  if(status==='uncertain')assert.match(card.text,/previous submission attempt has no confirmed receipt/i);
+  assert.deepEqual(await s.a.get('liveApplications',application.id),application);
+ }
+ assert.equal((await s.a.all('applicationHandoffs')).length,0);
+});
+
+test('job autofill options do not expose stale chat, changed URL or another tenant application',async t=>{
+ const before=process.env.APPLICATION_BROWSER_ENABLED;process.env.APPLICATION_BROWSER_ENABLED='true';t.after(()=>{if(before===undefined)delete process.env.APPLICATION_BROWSER_ENABLED;else process.env.APPLICATION_BROWSER_ENABLED=before;});
+ const s=await setup(t),url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
+ await s.a.put('jobs','job-a',{id:'job-a',title:'Analyst',company:'Example',applyUrl:url});
+ const application={id:'private-application',jobId:'job-a',url,chatId:'101',linkedAt:'',status:'ready',revision:1};
+ await s.b.put('liveApplications',application.id,application);
+ for(const [i,patch] of [{chatId:'202'},{linkedAt:'another-link'},{url:url.replace('/example/','/other/')}].entries()){
+  await s.a.put('liveApplications',application.id,{...application,...patch});await s.send('/job job-a',200+i);
+ }
+ for(const message of await s.jobs()){
+  const card=await s.payload(message);assert.equal(card.liveApplicationId,undefined);
+  assert.ok(card.replyMarkup.inline_keyboard.flat().some(b=>b.text==='Set up application autofill'));
+  assert.ok(card.replyMarkup.inline_keyboard.flat().every(b=>!String(b.url||'').includes('application-handoff')));
+ }
+});
+
 test('career commands require the linked private chat and preserve existing /resume and ordinary attachments',async t=>{
   const s=await setup(t);
   assert.equal(await s.send('/resume'),false);

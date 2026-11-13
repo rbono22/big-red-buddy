@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {createApplicationHandoff,redeemApplicationHandoff} from '../lib/application-handoff.mjs';
 import {getCareerProfile,saveCareerProfile} from '../lib/career.mjs';
 import {saveApplicationAnswerMemory,suggestSavedApplicationAnswer} from '../lib/application-answer-memory.mjs';
+import {executeLiveApplication} from '../lib/live-applications.mjs';
 const hash=value=>createHash('sha256').update(typeof value==='string'?value:JSON.stringify(value)).digest('hex');
 const url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
 function store(userId){const rows=new Map();return {userId,get:async(b,k)=>structuredClone(rows.get(b+':'+k)||null),put:async(b,k,v)=>rows.set(b+':'+k,structuredClone(v)),delete:async(b,k)=>rows.delete(b+':'+k),all:async b=>[...rows].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v)),compareAndSet:async(b,k,old,next)=>{if(JSON.stringify(rows.get(b+':'+k)||null)!==JSON.stringify(old))return false;rows.set(b+':'+k,structuredClone(next));return true;}};}
@@ -35,9 +36,32 @@ test('token cannot cross tenant, expire, or survive changed application sources 
   await assert.rejects(redeemApplicationHandoff(change==='tenant'?store('b'):s,{token:created.token},{now:change==='expiry'?999999:1100}),/expired or the application changed/);
  }
 });
-test('queued, attempted, submitted, or ambiguous submissions cannot be duplicated through handoff',async()=>{
- for(const patch of [{status:'queued'},{status:'submitting'},{status:'submitted'},{status:'uncertain'},{submitAttemptAt:new Date().toISOString()}]){
+test('queued, active, submitted, and malformed attempts cannot create a handoff',async()=>{
+ for(const patch of [{status:'queued'},{status:'submitting'},{status:'submitted'},{status:'uncertain'},{status:'uncertain',submitAttemptAt:'invalid'},{submitAttemptAt:new Date().toISOString()}]){
   const {s,a}=await fixture();await s.put('liveApplications','app',{...a,...patch});await assert.rejects(createApplicationHandoff(s,{applicationId:'app'}),/expired or the application changed/);
+ }
+});
+test('explicit manual recovery preserves an unconfirmed attempt and never requeues it',async()=>{
+ const {s,a}=await fixture(),attempt={...a,status:'uncertain',mode:'quick',submitAttemptAt:'2026-11-13T04:14:37.069Z',receipt:{confirmation:null,reason:'Employer confirmation was not observed'},error:'Submission could not be confirmed',quickAuthorizationExpiresAt:999999};await s.put('liveApplications','app',attempt);
+ const created=await createApplicationHandoff(s,{applicationId:'app',revision:2},{now:1000});assert.equal(created.priorSubmissionUnconfirmed,true);
+ assert.deepEqual(await s.get('liveApplications','app'),attempt);
+ const payload=await redeemApplicationHandoff(s,{token:created.token},{now:1100}),after=await s.get('liveApplications','app');
+ assert.equal(payload.priorSubmissionUnconfirmed,true);assert.equal(payload.url,url);assert.equal(payload.status,'uncertain');assert.equal(payload.answers.name.value,'Alex Example');assert.ok(payload.documents.resume);
+ assert.deepEqual(after,{...attempt,revision:3,quickAuthorizationExpiresAt:0,browserHandoffAt:new Date(1100).toISOString(),updatedAt:new Date(1100).toISOString()});
+ assert.equal(await s.compareAndSet('liveApplications','app',attempt,{...attempt,status:'queued',revision:3}),false);
+ for(const revision of [attempt.revision,after.revision])assert.deepEqual(await executeLiveApplication({forUser:()=>s},{userId:s.userId,type:'application-submit',payload:{applicationId:'app',revision}},{queue:{enqueue:()=>assert.fail('Manual recovery must not queue work')},submit:()=>assert.fail('Manual recovery must not submit')}),{stale:true});
+ const retry=await createApplicationHandoff(s,{applicationId:'app',revision:3},{now:1200}),again=await redeemApplicationHandoff(s,{token:retry.token},{now:1300});
+ assert.equal(again.status,'uncertain');assert.equal(again.priorSubmissionUnconfirmed,true);assert.equal((await s.get('liveApplications','app')).submitAttemptAt,attempt.submitAttemptAt);
+});
+test('manual recovery cannot race a changed submission status or employer receipt',async()=>{
+ for(const status of ['queued','submitting','submitted','uncertain']){
+  const {s,a}=await fixture();await s.put('liveApplications','app',{...a,status:'uncertain',submitAttemptAt:'2026-11-13T04:14:37.069Z'});
+  const created=await createApplicationHandoff(s,{applicationId:'app'}),cas=s.compareAndSet;let newer;
+  s.compareAndSet=async(bucket,id,old,next)=>{
+   if(bucket==='liveApplications'){newer={...old,status,revision:old.revision+1,receipt:{confirmation:'New employer result'}};await cas(bucket,id,old,newer);}
+   return cas(bucket,id,old,next);
+  };
+  await assert.rejects(redeemApplicationHandoff(s,{token:created.token}),/expired or the application changed/);assert.deepEqual(await s.get('liveApplications','app'),newer);
  }
 });
 test('simultaneous redemption returns private contents only once',async()=>{
