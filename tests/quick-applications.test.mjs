@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import {startQuickApplication,startLiveApplication,executeLiveApplication,handleLiveApplicationAction,quickApplicationAnswers,quickApplicationJobFingerprint} from '../lib/live-applications.mjs';
 import {saveCareerProfile} from '../lib/career.mjs';
 import {editDemographics} from '../lib/demographics.mjs';
+import {createApplicationHandoff,redeemApplicationHandoff} from '../lib/application-handoff.mjs';
 
 const URL='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
 const field=(key,label,type='text',required=true,profileField)=>({key,label,type,required,options:[],...(profileField?{profileField}:{})});
 const BASE={title:'Product Manager',fields:[field('_systemfield_resume','Resume','file'),field('name','Full name','text',true,'fullName'),field('email','Email','email',true,'email'),field('phone','Phone','tel',true,'phone'),field('why','Why this company?','textarea',false)],consentText:''};
+const buttons=s=>s.tasks.filter(j=>j.type==='telegram-send').at(-1).payload.replyMarkup.inline_keyboard.flat();
+const handoffButton=s=>buttons(s).find(b=>b.text==='Open & fill in my browser');
 function memory(userId){const rows=new Map();return {userId,get:async(b,k)=>structuredClone(rows.get(b+':'+k)||null),put:async(b,k,v)=>rows.set(b+':'+k,structuredClone(v)),delete:async(b,k)=>rows.delete(b+':'+k),all:async b=>[...rows].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v)),compareAndSet:async(b,k,old,next)=>{if(JSON.stringify(rows.get(b+':'+k)||null)!==JSON.stringify(old))return false;rows.set(b+':'+k,structuredClone(next));return true;}};}
 async function setup(t,{form=BASE}={}){
  const prior={APPLICATION_BROWSER_ENABLED:process.env.APPLICATION_BROWSER_ENABLED,APP_ORIGIN:process.env.APP_ORIGIN,PILOT_SHEET_ID:process.env.PILOT_SHEET_ID};
@@ -26,11 +29,53 @@ async function setup(t,{form=BASE}={}){
 test('Apply now uses saved facts, omits optional questions, submits once, and only reports an employer receipt',async t=>{
  const s=await setup(t);await startQuickApplication(s.a,s.queue,'role',1);await startQuickApplication(s.a,s.queue,'role',1);await startQuickApplication(s.a,s.queue,'role',2);
  assert.equal(s.tasks.filter(j=>j.type==='application-inspect').length,1);
+ assert.equal(handoffButton(s),undefined);assert.equal((await s.a.all('applicationHandoffs')).length,0);
  await s.run('application-inspect');const a=await s.current();assert.equal(a.mode,'quick');assert.equal(a.status,'queued');assert.equal(a.answers.name.value,'Example Student');assert.equal(a.answers.why.value,null);assert.equal(a.answers.why.source,'omitted optional field');assert.equal(a.answers._systemfield_resume.value,'Student.pdf');
  assert.equal(s.tasks.filter(j=>j.type==='application-submit').length,1);assert.equal(s.tasks.find(j=>j.type==='application-submit').options.maxAttempts,1);
  assert.doesNotMatch(s.tasks.filter(j=>j.type==='telegram-send').map(j=>j.payload.text).join('\n'),/Review your application|Ready to send|Submit to Example/);
  await s.run('application-submit');assert.equal((await s.current()).status,'submitted');assert.match(s.tasks.at(-1).payload.text,/Application received/);assert.deepEqual(s.counts(),{analyses:0,drafts:0,submissions:1});
  await s.run('application-submit');await startQuickApplication(s.a,s.queue,'role',3);assert.equal(s.tasks.filter(j=>j.type==='application-submit').length,1);assert.equal(s.counts().submissions,1);
+ assert.equal(handoffButton(s),undefined);assert.match(s.tasks.at(-1).payload.text,/Application received/);
+});
+
+test('initial quick and guided inspections do not advertise an autofill link before a form is ready',async t=>{
+ for(const start of [startQuickApplication,startLiveApplication]){
+  const s=await setup(t);await start(s.a,s.queue,'role','start');
+  assert.equal(handoffButton(s),undefined);assert.equal((await s.a.all('applicationHandoffs')).length,0);assert.equal((await s.current()).form,undefined);
+  if(start===startQuickApplication)assert.match(s.tasks.at(-1).payload.text,/Open & fill button once the form is ready/);
+ }
+});
+
+test('pre-submit browser failures immediately send a primary usable handoff without retrying',async t=>{
+ for(const code of ['HUMAN_VERIFICATION_REQUIRED','UNSUPPORTED_FORM','REQUIRED_CONSENT','browser control failed'])await t.test(code,async t=>{
+  const s=await setup(t);await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect');let attempts=0;
+  const failure={submit:async()=>{attempts++;throw Object.assign(Error('private browser detail'),{code});}};
+  await s.run('application-submit',failure);const a=await s.current();
+  assert.equal(a.status,'needs_attention');assert.equal(a.submitAttemptAt,undefined);assert.equal(buttons(s)[0].text,'Open & fill in my browser');
+  assert.equal(handoffButton(s).url,`https://app.bigredbuddy.com/#application-handoff/${a.id}`);assert.match(s.tasks.at(-1).payload.text,/desktop Chrome/);assert.doesNotMatch(s.tasks.at(-1).payload.text,/private browser detail/);
+  assert.equal((await s.a.all('applicationHandoffs')).length,0);assert.equal(s.tasks.filter(j=>j.type==='application-submit').length,1);
+  assert.deepEqual(await s.run('application-submit',failure),{stale:true});assert.equal(attempts,1);
+  const handoff=await createApplicationHandoff(s.a,{applicationId:a.id,revision:a.revision});assert.equal(handoff.applicationId,a.id);
+ });
+});
+
+test('failed first inspection offers retry and employer page without promising a usable autofill handoff',async t=>{
+ const s=await setup(t);await startQuickApplication(s.a,s.queue,'role',1);
+ await s.run('application-inspect',{inspect:async()=>{throw Object.assign(Error('private browser detail'),{code:'UNSUPPORTED_FORM'});}});
+ assert.equal((await s.current()).status,'needs_attention');assert.equal((await s.current()).form,undefined);assert.equal(handoffButton(s),undefined);
+ assert.match(s.tasks.at(-1).payload.text,/autofill handoff is not ready/);assert.ok(buttons(s).some(b=>b.text==='Try Apply now again'));assert.ok(buttons(s).some(b=>b.text==='Open employer posting'));
+ assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);assert.equal((await s.a.all('applicationHandoffs')).length,0);
+});
+
+test('Apply now after browser handoff selects that application and opens a fresh handoff without new work',async t=>{
+ const s=await setup(t,{form:{...BASE,fields:[...BASE.fields,field('salary','Salary expectation')]}});
+ await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect');let a=await s.current();
+ const first=await createApplicationHandoff(s.a,{applicationId:a.id,revision:a.revision});await redeemApplicationHandoff(s.a,{token:first.token});a=await s.current();assert.equal(a.status,'browser_handoff');
+ await s.a.put('settings','liveApplicationFlow',{id:'another-application'});const work=s.tasks.filter(j=>j.type.startsWith('application-')).length;
+ await startQuickApplication(s.a,s.queue,'role',2);assert.deepEqual(await s.a.get('settings','liveApplicationFlow'),{id:a.id});
+ assert.equal(buttons(s)[0].text,'Open & fill in my browser');assert.equal(s.tasks.filter(j=>j.type.startsWith('application-')).length,work);assert.equal((await s.current()).revision,a.revision);
+ const second=await createApplicationHandoff(s.a,{applicationId:a.id,revision:a.revision});assert.notEqual(second.token,first.token);const filled=await redeemApplicationHandoff(s.a,{token:second.token});assert.equal(filled.applicationId,a.id);assert.equal(filled.answers.name.value,'Example Student');
+ assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);
 });
 
 test('required cover letter text is generated from the selected resume and role and submitted without review',async t=>{
@@ -77,6 +122,8 @@ test('failed, malformed, or over-limit cover letters never queue submission',asy
    return {text:kind==='empty'?'':kind==='too-long'?'x'.repeat(50):'Valid text but no file.'};
   }});
   assert.equal((await s.current()).status,'needs_attention');assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);assert.doesNotMatch(s.tasks.at(-1).payload.text,/private model detail/);
+  assert.deepEqual((await s.current()).form.fields.map(f=>f.key),[...BASE.fields.map(f=>f.key),'cover']);assert.equal(buttons(s)[0].text,'Open & fill in my browser');
+  const a=await s.current(),handoff=await createApplicationHandoff(s.a,{applicationId:a.id,revision:a.revision});const filled=await redeemApplicationHandoff(s.a,{token:handoff.token});assert.equal(filled.answers.name.value,'Example Student');assert.equal(filled.answers.cover,undefined);
  }
 });
 
@@ -102,7 +149,7 @@ test('required consent and experience are asked in Telegram without inferring an
  const s=await setup(t,{form});await editDemographics(s.a,{gender:'male',veteranStatus:'non_veteran'});
  await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect');const a=await s.current();
  assert.equal(a.status,'collecting');assert.deepEqual(a.missingFields,form.fields.slice(-2).map(f=>f.label));assert.match(s.tasks.at(-1).payload.text,/minimum of 4 years/);assert.equal(a.answers.years,undefined);assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);assert.deepEqual(s.counts(),{analyses:0,drafts:0,submissions:0});
- const buttons=s.tasks.at(-1).payload.replyMarkup.inline_keyboard.flat();assert.ok(buttons.some(b=>b.text==='Resume & Profile'));assert.ok(buttons.some(b=>b.text==='Continue in my browser'));
+ const choices=buttons(s);assert.ok(choices.some(b=>b.text==='Resume & Profile'));assert.ok(choices.some(b=>b.text==='Open & fill in my browser'));
 });
 
 test('optional demographic and consent fields are omitted; explicit saved SMS/WhatsApp choices can be reused',()=>{
@@ -148,6 +195,7 @@ test('profile, resume, selected job or authorization expiry changes block automa
   else if(kind==='expiry'){const a=await s.current();await s.a.put('liveApplications',a.id,{...a,quickAuthorizationExpiresAt:Date.now()-1});}
   else await s.a.put('jobs','role',{...(await s.a.get('jobs','role')),[kind]:'Changed'});
   await s.run('application-submit');assert.equal(s.counts().submissions,0);assert.equal((await s.current()).status,'needs_attention');assert.match((await s.current()).error,/changed/);
+  if(['profile','resume','title','company'].includes(kind))assert.equal(handoffButton(s),undefined);
  });
 });
 
@@ -162,7 +210,7 @@ test('relink suppresses an existing quick request and changing profile at final 
 test('uncertain quick submission is never retried and guarded actions cannot bypass missing facts',async t=>{
  const s=await setup(t);await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect');
  await s.run('application-submit',{submit:async args=>{await args.beforeSubmit();throw Error('network ended after click');}});const a=await s.current();assert.equal(a.status,'uncertain');
- await startQuickApplication(s.a,s.queue,'role',2);assert.equal(s.tasks.filter(j=>j.type==='application-submit').length,1);
+ await s.a.put('settings','liveApplicationFlow',{id:'another-application'});await startQuickApplication(s.a,s.queue,'role',2);assert.equal(s.tasks.filter(j=>j.type==='application-submit').length,1);assert.equal(s.tasks.filter(j=>j.type==='application-inspect').length,1);assert.deepEqual(await s.a.get('settings','liveApplicationFlow'),{id:a.id});assert.equal((await s.current()).revision,a.revision);assert.equal(buttons(s)[0].text,'Open & fill in my browser');assert.match(s.tasks.at(-1).payload.text,/receipt unconfirmed/);assert.equal((await s.a.all('applicationHandoffs')).length,0);
  const blocked=await setup(t,{form:{...BASE,fields:[...BASE.fields,field('missing','Salary expectation')]}});await startQuickApplication(blocked.a,blocked.queue,'role',3);await blocked.run('application-inspect');const b=await blocked.current();
  await assert.rejects(handleLiveApplicationAction(blocked.a,blocked.queue,{id:b.id,revision:b.revision,op:'submit'},4),/Choose Apply now again/);assert.equal(blocked.tasks.some(j=>j.type==='application-submit'),false);
 });
