@@ -6,7 +6,7 @@ import {chromium} from 'playwright-core';
 import {fillApplication} from '../fill.mjs';
 import {readLeverForm} from '../../lib/lever-browser.mjs';
 
-const urls={lever:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply',greenhouse:'https://job-boards.greenhouse.io/example/jobs/123',ashby:'https://jobs.ashbyhq.com/ramp/12345678-1234-1234-1234-123456789abc/application',workable:'https://apply.workable.com/valsoft-corp/j/ABC123DEF4/apply/'};
+const urls={lever:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply',greenhouse:'https://job-boards.greenhouse.io/example/jobs/123',greenhouseEmbed:'https://job-boards.greenhouse.io/embed/job_app?for=example&token=123',ashby:'https://jobs.ashbyhq.com/ramp/12345678-1234-1234-1234-123456789abc/application',workable:'https://apply.workable.com/valsoft-corp/j/ABC123DEF4/apply/'};
 const pdf=(name,text)=>{const bytes=Buffer.from('%PDF-1.7\n'+text);return {name,mimeType:'application/pdf',file:bytes.toString('base64'),sha256:createHash('sha256').update(bytes).digest('hex')};};
 const documents={resume:pdf('Resume.pdf','Synthetic résumé for Alex Example'),coverLetter:pdf('Cover Letter.pdf','Synthetic cover letter for Alex Example')};
 const browser=await chromium.launch({headless:true,executablePath:process.env.APPLICATION_BROWSER_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',chromiumSandbox:true});
@@ -18,7 +18,7 @@ async function fixture(provider,html,run){
   await context.route('**/*',route=>{const request=route.request();if(request.method()!=='GET')writes++;return request.url()===urls[provider]&&request.method()==='GET'?route.fulfill({status:200,contentType:'text/html; charset=utf-8',body:html}):route.abort();});
   const page=await context.newPage();await page.goto(urls[provider]);
   await page.evaluate(()=>{window.__submissions=0;document.addEventListener('submit',event=>{window.__submissions++;event.preventDefault();},true);});
-  const payload={version:1,applicationId:'synthetic',provider,url:urls[provider],title:'Product Manager',company:'Example',fields:[],answers:{},documents,expiresAt:Date.now()+300000};
+  const payload={version:1,applicationId:'synthetic',provider:provider.replace(/Embed$/,''),url:urls[provider],title:'Product Manager',company:'Example',fields:[],answers:{},documents,expiresAt:Date.now()+300000};
   await run(page,payload);assert.equal(await page.evaluate(()=>window.__submissions),0);cases++;
  }finally{await context.close();}
 }
@@ -75,6 +75,15 @@ try{
  });
  await fixture('workable','<h1 data-ui="job-title">Product Manager</h1><form data-ui="application-form"><span id="name-label">First name</span><span id="help">Help</span><input name="firstname" aria-labelledby="name-label help"><span id="move-label">Can you relocate?</span><fieldset role="radiogroup" data-ui="move" aria-labelledby="move-label"><label><input type="radio" name="move">Yes</label><label><input type="radio" name="move">No</label></fieldset></form>',async(page,payload)=>{
   payload.fields=[{key:'firstname',label:'First name',type:'text'},{key:'move',label:'Can you relocate?',type:'radio',options:['Yes','No']}];payload.answers={firstname:{value:'Alex'},move:{value:'No'}};const result=await page.evaluate(fillApplication,payload);assert.equal(result.filled,2);assert.equal(result.remaining,0);
+ });
+ // Greenhouse's embeddable form: no <h1>, title only in document.title, and a grouped multi-answer checkbox question.
+ await fixture('greenhouseEmbed','<title>Job Application for Product Manager at Example</title><h2>Apply for this job</h2><form id="application-form"><label for="first_name">First name *</label><input id="first_name"><fieldset id="countries"><legend>Which countries could you work in? *</legend><label for="c_us">United States</label><input type="checkbox" name="question_9[]" id="c_us"><label for="c_ca">Canada</label><input type="checkbox" name="question_9[]" id="c_ca" checked><label for="c_uk">United Kingdom</label><input type="checkbox" name="question_9[]" id="c_uk"></fieldset><button type="submit">Submit application</button></form>',async(page,payload)=>{
+  payload.fields=[{key:'first_name',controlId:'first_name',label:'First name',type:'text',required:true},{key:'question_9[]',controlId:'countries',label:'Which countries could you work in?',type:'checkbox',multiple:true,required:true,options:['United States','Canada','United Kingdom'],checkboxIds:['c_us','c_ca','c_uk']}];
+  payload.answers={first_name:{value:'Alex'},'question_9[]':{value:'United States\nUnited Kingdom'}};
+  const result=await page.evaluate(fillApplication,payload);assert.equal(result.error,undefined,JSON.stringify(result));assert.equal(result.filled,2,JSON.stringify(result.skipped));
+  assert.deepEqual(await page.evaluate(()=>['c_us','c_ca','c_uk'].map(id=>document.getElementById(id).checked)),[true,false,true],'exactly the chosen countries, preselected default cleared');
+  assert.equal(await page.evaluate(()=>document.getElementById('first_name').value),'Alex');
+  const wrong=await page.evaluate(fillApplication,{...payload,title:'Different role'});assert.match(wrong.error,/job title changed/);
  });
  assert.equal(writes,0);console.log(JSON.stringify({passed:cases,employerWrites:writes,screenshot:'/private/tmp/brb-handoff-qa.png'}));
 }finally{await browser.close();}
