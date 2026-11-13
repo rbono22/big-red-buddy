@@ -1261,3 +1261,43 @@ test('deleting a connection export clears edited referral drafts and suppresses 
 test('changed job facts invalidate cached referral drafts and mismatched API job context is rejected',async()=>{
  const fixture=linkedinFixture(),result=referralMatchFixture();result.job={...fixture.jobs[0]};const view=await renderDesignFixture(fixture,{'/api/career/linkedin/matches?jobId=sony-product':()=>result,'/api/settings':()=>{fixture.jobs[0]={...fixture.jobs[0],company:'Changed Employer',title:'Changed role',applyUrl:'https://example.test/changed'};return{};}});view.navigate('careers');clickUI(view,'[data-action="linkedin-job-matches"]');await settled();assert.ok(view.document.querySelector('.referral-message'));clickUI(view,'[data-action="save-job-preferences"]');await settled();assert.equal(view.document.querySelector('.referral-message'),null);assert.doesNotMatch(view.document.querySelector('.job-warm-leads').textContent,/Jordan Example|Product Manager at Sony/);clickUI(view,'[data-action="linkedin-job-matches"]');await settled();assert.equal(view.document.querySelector('.referral-message'),null);assert.match(view.document.querySelector('.job-warm-status').textContent,/job changed/);
 });
+
+test('application browser handoff page explains setup without creating a secret or submitting an application',async()=>{
+ const view=await renderDesignFixture(designFixture());view.navigate('application-handoff/fixture-application');
+ assert.match(view.document.querySelector('h1').textContent,/Continue in your browser/);
+ const panel=view.document.querySelector('#application-handoff');assert.match(panel.textContent,/chrome:\/\/extensions/);assert.match(panel.textContent,/Load unpacked/);assert.match(panel.textContent,/Complete any remaining questions and submit/);
+ assert.equal(panel.querySelector('a[download]').getAttribute('href'),'/browser-helper.zip');
+ assert.equal(panel.querySelector('[data-token],input,textarea'),null);
+ assert.equal(view.requests.some(r=>r.url.includes('/application-handoff')),false);
+ assert.equal(view.requests.some(r=>r.options?.method==='POST'),false);
+ view.navigate('application-handoff/<img src=x onerror=bad()>');assert.match(view.document.querySelector('h1').textContent,/Open a fresh application link/);assert.equal(view.document.querySelector('#main img'),null);
+});
+
+test('Cornell sign-in preserves only a valid browser handoff destination without loading student data',async()=>{
+ for(const hash of ['#application-handoff/fixture-application','#application-handoff/evil?next=https://example.org','#application-handoff/<img>']){
+  const view=await renderDesignFixture(designFixture(),{'/api/session':{user:null,googleConfigured:true,devEnabled:false}},{location:{hash,href:''}});
+  const href=view.document.querySelector('.login-cta').getAttribute('href');assert.equal(href,hash==='#application-handoff/fixture-application'?'/auth/google/start?returnTo='+encodeURIComponent('/'+hash):'/auth/google/start');assert.equal(view.requests.some(r=>r.url==='/api/state'||r.url.includes('/application-handoff')),false);
+ }
+});
+
+function savedAnswerFixture(){const fixture=designFixture();fixture.savedApplicationAnswers=[{id:'a'.repeat(64),question:'Describe a project <script>unsafe()</script>',value:'Built an internal tool <img src=x>',scope:'role',company:'Example <b>Corp</b>',roleTitle:'Analyst',scopeExplanation:'Reuse for this role only.',needsRefresh:true}];return fixture;}
+test('Resume and profile displays reusable answers, scope and freshness and confirms a tenant-bound deletion',async()=>{
+ const fixture=savedAnswerFixture(),answer=fixture.savedApplicationAnswers[0],view=await renderDesignFixture(fixture,{'/api/career/saved-answers/delete':options=>{assert.deepEqual(JSON.parse(options.body),{id:answer.id});fixture.savedApplicationAnswers=[];return {deleted:true,id:answer.id};}});
+ view.navigate('career-profile');const panel=view.document.querySelector('#saved-application-answers');assert.match(panel.textContent,/Needs refresh/);assert.match(panel.textContent,/This role/);assert.match(panel.textContent,/Reuse for this role only/);assert.match(panel.textContent,/<img src=x>/);assert.equal(panel.querySelector('img,script,b'),null);
+ clickUI(view,'[data-action="delete-saved-answer"]');await settled();const request=view.requests.find(r=>r.url==='/api/career/saved-answers/delete');assert.equal(request.options.headers['X-CSRF-Token'],'fixture');assert.equal(request.options.credentials,'same-origin');assert.match(view.document.querySelector('#saved-answers-status').textContent,/Saved answer deleted/);assert.equal(view.document.querySelector('[data-action="delete-saved-answer"]'),null);
+});
+
+test('late saved-answer deletions never erase or expose another signed-in student’s answers',async()=>{
+ const fixture=savedAnswerFixture();let signedIn=true,student='first',release;const firstId=fixture.savedApplicationAnswers[0].id,pending=new Promise(resolve=>release=resolve);
+ const view=await renderDesignFixture(fixture,{'/api/session':()=>({user:signedIn?{id:student,name:'Student'}:null,csrfToken:'fixture',devEnabled:true,devEmails:['second@cornell.edu']}),'/auth/logout':()=>{signedIn=false;return{};},'/api/career/saved-answers/delete':()=>pending});
+ view.navigate('career-profile');clickUI(view,'[data-action="delete-saved-answer"]');await settled();view.navigate('connections');clickUI(view,'[data-action="logout"]');await settled();
+ signedIn=true;student='second';fixture.savedApplicationAnswers=[{id:firstId,question:'Second account question',value:'SECOND_ACCOUNT_ANSWER',scope:'global',scopeExplanation:'Same question with current resume.',needsRefresh:false}];clickUI(view,'[data-action="dev-signin"]');await settled();view.navigate('career-profile');release({deleted:true,id:firstId});await settled();
+ assert.match(view.document.querySelector('#saved-application-answers').textContent,/SECOND_ACCOUNT_ANSWER/);assert.doesNotMatch(view.document.querySelector('#saved-application-answers').textContent,/Saved answer deleted|Built an internal tool/);assert.equal(view.document.querySelector('[data-action="delete-saved-answer"]').disabled,false);
+});
+
+test('browser handoff tracker rows continue on the safe owned application link without claiming submission',async()=>{
+ const fixture=designFixture();fixture.applicationTracker=[{id:'tracker',title:'Analyst',company:'Example',status:'needs_attention',statusLabel:'Continue in your browser',source:'telegram',liveApplicationId:'app:fixture_1',liveApplicationStatus:'browser_handoff',applyUrl:'https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply'}];
+ const view=await renderDesignFixture(fixture);view.navigate('careers');clickUI(view,'[data-action="career-tab"][data-tab="applications"]');
+ const tracker=view.document.querySelector('#application-tracker'),link=[...tracker.querySelectorAll('a')].find(a=>a.textContent==='Continue in my browser');assert.ok(link);assert.equal(link.getAttribute('href'),'/#application-handoff/app:fixture_1');assert.match(tracker.textContent,/Finish and submit on the employer’s page\. BRB has not confirmed a submission/);assert.doesNotMatch(tracker.textContent,/Continue in Telegram with/);assert.equal(tracker.querySelector('[data-action="application-tracker-status"]'),null);
+ fixture.applicationTracker[0].liveApplicationId='unsafe?token=private';const invalid=await renderDesignFixture(fixture);invalid.navigate('careers');assert.equal(Boolean(invalid.document.querySelector('#application-tracker a[href*="application-handoff"]')),false);assert.doesNotMatch(invalid.document.querySelector('#application-tracker').innerHTML,/token=private/);
+});

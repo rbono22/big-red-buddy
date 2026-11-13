@@ -51,3 +51,21 @@ test('reviewed exact choices, explicit optional skips and valid resume required 
 test('fingerprints bind question options, legal notice, and job title to the review',()=>{
  const base=form();for(const change of [f=>f.title='Different job',f=>f.fields[0].required=false,f=>f.fields.find(x=>x.key==='identity').options.push('New choice'),f=>f.consentText+=' Changed terms']){const f=structuredClone(base);change(f);assert.notEqual(greenhouseFingerprint(f),greenhouseFingerprint(base));}
 });
+
+test('Greenhouse recognizes explicit required cover letter text or PDF and preserves input limits',()=>{
+ const text=normalizeGreenhouseSnapshot(snapshot(html.replace('<textarea id="cover_letter_text">','<textarea id="cover_letter_text" required maxlength="1800">'))),letter=text.fields.find(f=>f.key==='cover_letter_text');
+ assert.equal(letter.purpose,'coverLetter');assert.equal(letter.required,true);assert.equal(letter.maxLength,1800);
+ const upload='<div class="file-upload" aria-labelledby="upload-label-cover" aria-required="true"><div id="upload-label-cover">Cover Letter*</div><input id="cover_letter" type="file" accept=".pdf,.docx"></div>';
+ const f=normalizeGreenhouseSnapshot(snapshot(html.replace('<label for="cover_letter_text">Cover Letter</label><textarea id="cover_letter_text"></textarea>',upload))),cover=f.fields.find(f=>f.key==='cover_letter');
+ assert.equal(cover.purpose,'coverLetter');assert.equal(cover.type,'file');assert.equal(cover.required,true);assert.equal(cover.accept,'.pdf,.docx');
+ for(const invalid of [upload.replace('.pdf,.docx','.docx'),upload.replace('type="file"','type="file" multiple'),upload.replace('Cover Letter*','Transcript*')])assert.throws(()=>normalizeGreenhouseSnapshot(snapshot(html.replace('</form>',invalid+'</form>'))),/UNSUPPORTED_FORM/);
+});
+
+test('Greenhouse validates cover attachment separately and never substitutes the resume',()=>{
+ const f=form();f.fields.push({key:'letter_file',controlId:'letter_file',label:'Cover letter',type:'file',required:true,options:[],accept:'.pdf'});
+ const a=answers(f);a.letter_file.value='Cover Letter.pdf';
+ assert.throws(()=>validateGreenhouseAnswers(f,a,resume),/INVALID_COVER_LETTER/);
+ assert.throws(()=>validateGreenhouseAnswers(f,a,resume,{name:'Cover Letter.pdf',file:Buffer.from('not PDF').toString('base64')}),/INVALID_COVER_LETTER/);
+ assert.doesNotThrow(()=>validateGreenhouseAnswers(f,a,resume,{name:'Cover Letter.pdf',file:Buffer.from('%PDF-1.7\nletter only').toString('base64')}));
+ const letter=f.fields.find(f=>f.key==='cover_letter_text');letter.maxLength=10;a.cover_letter_text.value='too long for the employer';assert.throws(()=>validateGreenhouseAnswers(f,a,resume,{name:'Cover Letter.pdf',file:resume.file}),/ANSWER_TOO_LONG/);
+});

@@ -53,7 +53,7 @@ test('experience estimate uses product titles, unions overlap, caps future month
 test('duplicate text cannot answer the next question and AI drafts need explicit acceptance',async t=>{
  const s=await setup(t);const a=await s.current(),field=a.form.fields.findIndex(f=>f.type==='yesno');await s.action('answer',{field,choice:1});
  const msg={chat:{id:101,type:'private'},text:'My own project example.'};await handleLiveApplicationMessage(s.a,s.queue,msg,200);const before=await s.current();await handleLiveApplicationMessage(s.a,s.queue,msg,200);assert.deepEqual(await s.current(),before);
- const flow=await s.a.get('settings','liveApplicationFlow');await s.action('generate',{field:flow.field});await s.run('application-answer',{draft:async()=>({answer:'Reviewable example.',needsManual:false})});const after=await s.current();assert.equal(after.answers[after.form.fields[flow.field].key],undefined);assert.equal(after.drafts[after.form.fields[flow.field].key].value,'Reviewable example.');
+ const flow=await s.a.get('settings','liveApplicationFlow');await s.action('generate',{field:flow.field});await s.run('application-answer',{draft:async()=>({answer:'Reviewable example.',needsManual:false}),motivation:async()=>({answer:'Reviewable example.',needsManual:false})});const after=await s.current();assert.equal(after.answers[after.form.fields[flow.field].key],undefined);assert.equal(after.drafts[after.form.fields[flow.field].key].value,'Reviewable example.');
  assert.equal(await handleLiveApplicationMessage(s.a,s.queue,{chat:{id:202,type:'private'},text:'Wrong user'},201),false);
 });
 test('submission requires a complete review and concurrent confirmation queues exactly once',async t=>{

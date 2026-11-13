@@ -35,5 +35,23 @@ try{
  const denied=await makePage();await assert.rejects(submitGreenhousePage(denied,{...input,beforeSubmit:async()=>{throw Error('Authorization revoked');}}),/Authorization revoked/);assert.equal(await denied.evaluate(()=>window.submissions),0);await denied.close();
  const changed=await makePage();await changed.locator('label[for=first_name]').evaluate(e=>e.textContent='Changed question');await assert.rejects(submitGreenhousePage(changed,input),/FORM_CHANGED/);assert.equal(await changed.evaluate(()=>window.submissions),0);await changed.close();
  const skipped=await makePage(),skipAnswers=structuredClone(answers);for(const f of form.fields)if(!f.required)skipAnswers[f.key].value=null;await submitGreenhousePage(skipped,{...input,answers:skipAnswers});assert.equal(await skipped.evaluate(()=>window.submissions),1);await skipped.close();
+ // A required cover letter may have only a PDF widget. Keep its bytes separate
+ // from the resume and detect a later widget changing the earlier attachment.
+ const coverLetter={name:'Cover Letter.pdf',file:Buffer.from('%PDF-1.7\ncover letter only').toString('base64')};
+ async function coverFixture({replaceResume=false}={}){
+  const page=await makePage();await page.evaluate(replaceResume=>{
+   document.querySelector('label[for=cover_letter_text]').remove();document.querySelector('#cover_letter_text').remove();
+   document.querySelector('#application-form').insertAdjacentHTML('beforeend','<div class="file-upload" aria-labelledby="upload-label-cover" aria-required="true"><div id="upload-label-cover">Cover Letter*</div><input id="cover_letter" type="file" accept=".pdf" required></div>');
+   document.querySelector('#cover_letter').onchange=e=>{const span=document.createElement('span');span.textContent=e.target.files[0].name;e.target.parentElement.append(span);if(replaceResume){const files=new DataTransfer();files.items.add(new File(['%PDF-1.7 wrong attachment'],'Unexpected.pdf',{type:'application/pdf'}));document.querySelector('#resume').files=files.files;}};
+  },replaceResume);return page;
+ }
+ const letterPage=await coverFixture(),letterForm=await readGreenhouseForm(letterPage),letterAnswers={...structuredClone(answers),cover_letter:{value:coverLetter.name,reviewed:true}};delete letterAnswers.cover_letter_text;
+ const letterInput={...input,form:letterForm,answers:letterAnswers,coverLetter};
+ await submitGreenhousePage(letterPage,{...letterInput,beforeSubmit:async()=>{
+  const files=await letterPage.evaluate(async()=>({resume:await document.querySelector('#resume').files[0].text(),letter:await document.querySelector('#cover_letter').files[0].text()}));
+  assert.equal(files.resume,Buffer.from(input.resume.file,'base64').toString());assert.equal(files.letter,Buffer.from(coverLetter.file,'base64').toString());
+ }});assert.equal(await letterPage.evaluate(()=>window.submissions),1);await letterPage.close();
+ const missingLetter=await coverFixture();await assert.rejects(submitGreenhousePage(missingLetter,{...letterInput,coverLetter:undefined}),/INVALID_COVER_LETTER/);assert.equal(await missingLetter.evaluate(()=>window.submissions),0);await missingLetter.close();
+ const changedResume=await coverFixture({replaceResume:true});await assert.rejects(submitGreenhousePage(changedResume,letterInput),/FIELD_CHANGED_AFTER_UPLOAD/);assert.equal(await changedResume.evaluate(()=>window.submissions),0);await changedResume.close();
  assert.equal(requests,0);console.log('Passed Greenhouse browser contract: all controls, multiple choices, exact location, PDF upload, optional skips, consent, receipt, changed form, autofill, conditional fields, CAPTCHA, revoked authorization, one final click. Zero external requests.');
 }finally{await browser.close();}

@@ -1,5 +1,7 @@
 import {liveApplicationSupported} from './lib/application-providers.mjs';
 import {startLiveApplication} from './lib/live-applications.mjs';
+import {createApplicationHandoff,redeemApplicationHandoff} from './lib/application-handoff.mjs';
+import {listApplicationAnswerMemory,deleteApplicationAnswerMemory} from './lib/application-answer-memory.mjs';
 import {personalCalendarStatus,savePersonalCalendars} from './lib/personal-calendar.mjs';
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';
 import {readDailyBriefingSettings,saveDailyBriefingSettings,buildDailyBriefing} from './lib/daily-briefing.mjs';
@@ -189,6 +191,7 @@ async function state(store) {
     careerExperience:await readCareerExperience(store),
     jobDiscovery:{...listJobSources(),settings:await readJobDiscoverySettings(store)},
     applicationAnswers: await store.all('applicationAnswers'),
+    savedApplicationAnswers: await listApplicationAnswerMemory(store),
     reminders: await store.all('reminders'),
     activity: (await store.all('activity')).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30),
     metrics: (await store.all('metrics')).slice(-50),
@@ -248,7 +251,7 @@ async function route(req, res) {
     }
   }
   const callback = p === '/auth/google/callback' || p === '/auth/slack/callback';
-  const publicAsset=['/','/app.js','/schedule-groups.js','/career-search.js','/style.css'].includes(p)&&['GET','HEAD'].includes(req.method);
+  const publicAsset=['/','/app.js','/schedule-groups.js','/career-search.js','/style.css','/browser-helper.zip'].includes(p)&&['GET','HEAD'].includes(req.method);
   if (!callback&&!publicAsset) enforceRequestOrigin(req, config);
   if (p === '/api/session' && req.method === 'GET') {
     const session = await auth.authenticate(req, {
@@ -263,8 +266,10 @@ async function route(req, res) {
   }
   if (p.startsWith('/auth/')) authLimiter.check(clientIP(req));
   if (p === '/auth/google/start' && req.method === 'GET') {
+    const returnTo=url.searchParams.get('returnTo');
     const result = await auth.beginGoogle(req, res, {
-      purpose: 'login'
+      purpose: 'login',
+      returnPath: typeof returnTo==='string'&&/^\/#application-handoff\/[A-Za-z0-9:_-]{1,160}$/.test(returnTo)?returnTo:'/'
     });
     return redirect(res, result.url);
   }
@@ -280,11 +285,12 @@ async function route(req, res) {
       ok: true
     });
   }
-  if (['/', '/app.js', '/schedule-groups.js', '/career-search.js', '/style.css'].includes(p) && ['GET', 'HEAD'].includes(req.method)) {
+  if (publicAsset) {
     const name = p === '/' ? 'index.html' : p.slice(1),
       data = await readFile(path.join(ROOT, 'public', name));
     res.writeHead(200, {
-      'Content-Type': name.endsWith('.js') ? 'text/javascript; charset=utf-8' : name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8'
+      'Content-Type': name.endsWith('.zip') ? 'application/zip' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8',
+      ...(name==='browser-helper.zip'?{'Content-Disposition':'attachment; filename="BRB-browser-helper.zip"','Cache-Control':'no-store'}:{})
     });
     return res.end(req.method === 'HEAD' ? '' : data);
   }
@@ -463,6 +469,7 @@ async function route(req, res) {
   }
   if(p==='/api/campus/calendars'&&req.method==='GET')return json(res,200,await listCampusCalendars(store));
   if(p==='/api/career/applications'&&req.method==='GET')return json(res,200,await listApplicationTracker(store,{queue}));
+  if(p==='/api/career/saved-answers'&&req.method==='GET')return json(res,200,{answers:await listApplicationAnswerMemory(store)});
   if(p==='/api/career/demographics'&&req.method==='GET')return json(res,200,{...await getDemographics(store),fields:DEMOGRAPHIC_FIELDS});
   if(p==='/api/partiful/calendars'&&req.method==='GET')return json(res,200,await listPartifulCalendars(store));
   if(p==='/api/luma/calendars'&&req.method==='GET')return json(res,200,await listLumaCalendars(store));
@@ -907,6 +914,21 @@ async function route(req, res) {
     heavyLimiter.check(user.id);const b=await body(req);
     if(!b||typeof b.id!=='string'||Object.keys(b).some(k=>k!=='id'))throw new HttpError(400,'Choose a saved job.');
     await startLiveApplication(store,queue,b.id,`web-application:${randomBytes(16).toString('hex')}`);return json(res,202,{started:true});
+  }
+  if(p==='/api/career/application-handoff'){
+    const b=await body(req);
+    if(Object.keys(b).some(key=>!['applicationId','revision'].includes(key))||typeof b.applicationId!=='string'||(b.revision!==undefined&&(!Number.isSafeInteger(b.revision)||b.revision<0)))throw new HttpError(400,'Choose a current application to continue in your browser.');
+    return json(res,200,{handoff:await createApplicationHandoff(store,b)});
+  }
+  if(p==='/api/career/application-handoff/redeem'){
+    const b=await body(req);
+    if(Object.keys(b).length!==1||typeof b.token!=='string')throw new HttpError(400,'Open a fresh browser handoff from BRB.');
+    return json(res,200,{handoff:await redeemApplicationHandoff(store,b)});
+  }
+  if(p==='/api/career/saved-answers/delete'){
+    const b=await body(req);
+    if(Object.keys(b).length!==1||typeof b.id!=='string')throw new HttpError(400,'Choose a saved answer from your profile.');
+    return json(res,200,await deleteApplicationAnswerMemory(store,b.id));
   }
   if (p === '/api/career/profile') {
     const patch=await body(req);

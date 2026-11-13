@@ -10,16 +10,17 @@ const browser=await chromium.launch({executablePath:process.env.APPLICATION_BROW
 let network=0;
 try{
  const context=await browser.newContext();await context.route('**/*',route=>{network++;return route.abort();});
- async function page(mode='success'){
+ async function page(mode='success',{cover=false}={}){
   const p=await context.newPage();p.setDefaultTimeout(1500);
   await p.setContent('<h1>Product Manager | Bill Pay</h1><div id="fields">'+markup+'</div><button id="submit">Submit Application</button>');
-  await p.evaluate(mode=>{
+  await p.evaluate(({mode,cover})=>{
+   if(cover){const field=document.createElement('div');field.dataset.fieldPath='cover_document';field.innerHTML='<label class="ashby-application-form-question-title">Cover letter</label><input type="file" required accept="application/pdf">';document.getElementById('fields').append(field);}
    window.submissions=0;window.mode=mode;
    const input=document.querySelector('[role=combobox]');input.addEventListener('input',()=>{document.querySelectorAll('[role=option]').forEach(e=>e.remove());const option=document.createElement('div');option.setAttribute('role','option');option.textContent='New York City, New York, United States';option.onclick=()=>{input.value=option.textContent;option.remove();};document.body.append(option);});
    document.querySelectorAll('[data-option]').forEach(button=>{button.type='button';button.onclick=()=>{button.parentElement.querySelectorAll('[data-option]').forEach(b=>b.setAttribute('aria-pressed','false'));button.setAttribute('aria-pressed','true');};});
-   document.querySelector('[data-field-path="_systemfield_resume"] input').addEventListener('change',event=>{const span=document.createElement('span');span.textContent=event.target.files[0].name;event.target.parentElement.append(span);if(mode==='autofill')document.querySelector('[data-field-path="_systemfield_name"] input').value='Changed by autofill';if(mode==='optional-autofill')document.querySelector('[data-field-path="64157536-a836-4d08-be51-ee4ec8cb3fb6"] textarea').value='Unrequested resume summary';});
+   for(const input of document.querySelectorAll('input[type=file]'))input.addEventListener('change',event=>{const span=document.createElement('span');span.textContent=event.target.files[0].name;event.target.parentElement.append(span);if(mode==='autofill')document.querySelector('[data-field-path="_systemfield_name"] input').value='Changed by autofill';if(mode==='optional-autofill')document.querySelector('[data-field-path="64157536-a836-4d08-be51-ee4ec8cb3fb6"] textarea').value='Unrequested resume summary';});
    document.getElementById('submit').onclick=()=>{window.submissions++;window.saved=[...document.querySelectorAll('input,textarea')].map(e=>({value:e.value,checked:e.checked}));document.getElementById('fields').remove();document.getElementById('submit').remove();if(mode==='success'){const h=document.createElement('h2');h.textContent='Application submitted!';document.body.append(h);}else{const p=document.createElement('p');p.textContent='Application submitted is a phrase in the job description, not a receipt.';document.body.append(p);}};
-  },mode);return p;
+  },{mode,cover});return p;
  }
  const answers=Object.fromEntries(form.fields.map(f=>[f.key,{reviewed:true,value:f.type==='file'?'Synthetic.pdf':f.type==='location'?'New York City, New York, United States':f.type==='email'?'synthetic@example.edu':f.type==='tel'?'+12125551234':f.options.length?f.options.at(-1):'Synthetic answer'}]));
  const resume={name:'Synthetic.pdf',file:Buffer.from('%PDF-1.7\nsynthetic fixture').toString('base64')};let authorized=0;
@@ -43,5 +44,9 @@ try{
   assert.equal(await defaults.evaluate(()=>window.submissions),0);assert.equal(authorized,before);await defaults.close();
  }
  const uncertain=await page('no-receipt');await assert.rejects(submitAshbyPage(uncertain,input),/SUBMISSION_UNCONFIRMED/);assert.equal(await uncertain.evaluate(()=>window.submissions),1);await uncertain.close();
+ const coverLetter={name:'Cover Letter.pdf',file:Buffer.from('%PDF-1.7\nCover fixture; distinct from resume.').toString('base64')};
+ const withCover=await page('success',{cover:true}),coverForm=await readAshbyForm(withCover),coverAnswers={...answers,cover_document:{value:coverLetter.name,reviewed:true}};
+ const coverReceipt=await submitAshbyPage(withCover,{...input,form:coverForm,answers:coverAnswers,coverLetter,beforeSubmit:async()=>{const files=await withCover.locator('input[type=file]').evaluateAll(async inputs=>Promise.all(inputs.map(async e=>({name:e.files[0].name,text:await e.files[0].text()}))));assert.equal(files.length,2);assert.equal(files[0].text,Buffer.from(resume.file,'base64').toString());assert.equal(files[1].text,Buffer.from(coverLetter.file,'base64').toString());}});assert.equal(coverReceipt.confirmation,'Application submitted!');await withCover.close();
+ const missingCover=await page('success',{cover:true});await assert.rejects(submitAshbyPage(missingCover,{...input,form:await readAshbyForm(missingCover),answers:coverAnswers}));assert.equal(await missingCover.locator('input[type=file]').evaluateAll(inputs=>inputs.reduce((sum,e)=>sum+e.files.length,0)),0);assert.equal(await missingCover.evaluate(()=>window.submissions),0);await missingCover.close();
  assert.equal(network,0);console.log('Passed: actual field parsing, all input types, PDF upload, success receipt, changed-form refusal, required and optional autofill rechecks, omitted text clearing, refusal of omitted radio/yesno/location defaults, missing receipt. Zero external requests.');
 }finally{await browser.close();}

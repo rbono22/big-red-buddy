@@ -40,10 +40,19 @@ test('Native checkbox groups and multiple selects keep exact labels and require 
  assert.equal(form.fields.at(-2).multiple,true);assert.deepEqual(form.fields.at(-2).options,['First','Second']);assert.equal(form.fields.at(-1).multiple,true);assert.deepEqual(form.fields.at(-1).optionValues,['1','2']);
 });
 
+test('Lever recognizes explicit cover-letter text and PDF controls, and refuses unrelated or unsupported uploads',async()=>{
+ const extra='<li class="application-question"><label class="application-label">Cover letter<input name="coverLetter" type="file" accept="application/pdf" required></label></li>';
+ const form=await readLeverForm(page(html.replace('</form>',extra+'</form>'))),cover=form.fields.at(-1);
+ assert.equal(cover.purpose,'coverLetter');assert.equal(cover.required,true);assert.equal(cover.controlName,'coverLetter');assert.notEqual(cover.key,'_systemfield_resume');assert.equal(cover.accept,'application/pdf');
+ const written=await readLeverForm(page(html.replace('</form>','<li class="application-question"><label class="application-label">Please provide your cover letter<textarea name="coverText" maxlength="1600" required></textarea></label></li></form>')));
+ assert.equal(written.fields.at(-1).purpose,'coverLetter');assert.equal(written.fields.at(-1).maxLength,1600);
+ for(const invalid of [extra.replace('application/pdf','.docx'),extra.replace('type="file"','type="file" multiple'),extra.replace('Cover letter','Work sample')])await assert.rejects(readLeverForm(page(html.replace('</form>',invalid+'</form>'))),/UNSUPPORTED_FORM/);
+});
+
 // Use real DOM values, including the location value the employer actually posts.
 // The browser verification script separately exercises the full captured form.
-async function omittedFixture({selectedLocation='',visibleLocation='',files=[],afterUpload,afterFill}={}){
- const {document}=parseHTML('<h2>Fixture role</h2><form id="application-form" method="POST"><div class="application-question"><label class="application-label">Resume</label><input type="file" name="resume"></div><div class="application-question"><label class="application-label">Current location</label><input type="text" name="location" class="location-input"></div><input type="hidden" id="selected-location" name="selectedLocation"><div class="application-question"><label class="application-label">Optional text</label><input type="text" name="extra"></div><div class="resume"><span class="filename"></span></div><div class="resume-upload-working"></div></form>');
+async function omittedFixture({selectedLocation='',visibleLocation='',files=[],afterUpload,afterFill,extraHTML=''}={}){
+ const {document}=parseHTML('<h2>Fixture role</h2><form id="application-form" method="POST"><div class="application-question"><label class="application-label">Resume</label><input type="file" name="resume"></div><div class="application-question"><label class="application-label">Current location</label><input type="text" name="location" class="location-input"></div><input type="hidden" id="selected-location" name="selectedLocation"><div class="application-question"><label class="application-label">Optional text</label><input type="text" name="extra"></div><div class="resume"><span class="filename"></span></div><div class="resume-upload-working"></div>'+extraHTML+'</form>');
  document.querySelector('[name=resume]').files=files;
  document.querySelector('[name=location]').value=visibleLocation;
  document.querySelector('#selected-location').value=selectedLocation;
@@ -53,6 +62,8 @@ async function omittedFixture({selectedLocation='',visibleLocation='',files=[],a
   evaluateAll:async fn=>fn(elements),evaluate:async fn=>{assert.equal(elements.length,1);return fn(elements[0]);},
   fill:async value=>{assert.equal(elements.length,1);elements[0].value=value;afterFill?.(document,elements[0]);},
   blur:async()=>{},inputValue:async()=>{assert.equal(elements.length,1);return elements[0].value;},
+  setChecked:async value=>{assert.equal(elements.length,1);assert.equal(elements[0].type,'checkbox');elements[0].checked=value;},
+  isChecked:async()=>{assert.equal(elements.length,1);return !!elements[0].checked;},
   setInputFiles:async file=>{assert.equal(elements.length,1);elements[0].files=[{name:file.name,size:file.buffer.length}];document.querySelector('.filename').textContent=file.name;afterUpload?.(document);},
   waitFor:async()=>{},
  });
@@ -91,4 +102,14 @@ test('Lever refuses hidden location autofill after a resume upload while the vis
  f.answers._systemfield_resume={value:'Synthetic.pdf',reviewed:true};
  await assert.rejects(fillLeverApplication(f.page,f.form,f.answers,{name:'Synthetic.pdf',file:Buffer.from('%PDF-1.7 fixture').toString('base64')}),{code:'FIELD_CHANGED_AFTER_UPLOAD'});
  assert.equal(f.document.querySelector('[name=location]').value,'');
+});
+
+test('Lever fills the consent checkbox without selecting its same-name hidden false fallback',async()=>{
+ const f=await omittedFixture({extraHTML:'<div class="application-question"><span class="application-label">Future recruiting opportunities</span><input type="hidden" name="consent[marketing]" value="false"><input type="checkbox" name="consent[marketing]" value="true"></div>'});
+ const field=f.form.fields.find(field=>field.controlName==='consent[marketing]');assert.equal(field.type,'checkbox');assert.equal(f.form.fields.filter(field=>field.controlName==='consent[marketing]').length,1);
+ for(const value of [null,'Yes','No']){
+  f.answers[field.key]={value,reviewed:true};await fillLeverApplication(f.page,f.form,f.answers,{});
+  assert.equal(f.document.querySelector('input[type=checkbox]').checked,value==='Yes');
+  assert.equal(f.document.querySelector('input[type=hidden][name="consent[marketing]"]').value,'false');
+ }
 });

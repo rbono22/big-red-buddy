@@ -40,3 +40,13 @@ test('Workable fingerprints include title, question wording, requirement and pol
  const original=await read(),fingerprint=workableFingerprint(original);
  for(const mutate of [d=>d.querySelector('h1').textContent='Different role',d=>d.querySelector('#QA_12789816_label').textContent='Changed question',d=>{const i=d.querySelector('[name="firstname"]');i.removeAttribute('required');i.setAttribute('aria-required','false');},d=>d.querySelector('[data-ui="footer-gdpr"] a').setAttribute('href','https://example.test/policy')])assert.notEqual(workableFingerprint(await read(mutate)),fingerprint);
 });
+
+test('Workable recognizes required cover-letter text and PDF controls separately from the resume',async()=>{
+ for(const markup of ['<label id="cover_label" for="cover">Cover letter</label><textarea id="cover" aria-labelledby="cover_label" data-ui="cover_letter" name="cover_letter" required maxlength="1400"></textarea>','<label id="cover_label" for="cover">Cover letter</label><input id="cover" aria-labelledby="cover_label" type="file" data-ui="cover_letter" name="cover_letter" required accept=".pdf,.docx">']){
+  const form=await read(d=>d.querySelector('form').insertAdjacentHTML('beforeend',markup)),cover=form.fields.find(f=>f.key==='cover_letter');assert.equal(cover.purpose,'coverLetter');assert.equal(cover.required,true);assert.ok(form.fields.some(f=>f.key==='_systemfield_resume'));
+  if(cover.type==='textarea')assert.equal(cover.maxLength,1400);
+ }
+});
+test('Workable rejects cover attachments that demand non-PDF or multiple files',async()=>{
+ for(const extra of ['accept=".docx"','multiple'])await assert.rejects(read(d=>{d.querySelector('form').insertAdjacentHTML('beforeend',`<label id="cover_label" for="cover">Cover letter</label><input id="cover" aria-labelledby="cover_label" type="file" data-ui="cover_letter" required ${extra}>`);const e=d.querySelector('#cover');e.multiple=e.hasAttribute('multiple');}),{code:'UNSUPPORTED_FORM'});
+});

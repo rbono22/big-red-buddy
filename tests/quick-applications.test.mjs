@@ -33,12 +33,76 @@ test('Apply now uses saved facts, omits optional questions, submits once, and on
  await s.run('application-submit');await startQuickApplication(s.a,s.queue,'role',3);assert.equal(s.tasks.filter(j=>j.type==='application-submit').length,1);assert.equal(s.counts().submissions,1);
 });
 
-test('required consent and inferred experience stop quick apply with explicit missing labels and no AI',async t=>{
+test('required cover letter text is generated from the selected resume and role and submitted without review',async t=>{
+ const cover=field('cover','Cover letter','textarea'),s=await setup(t,{form:{...BASE,fields:[...BASE.fields,cover]}});
+ await s.a.put('jobs','role',{...(await s.a.get('jobs','role')),description:'Build analytics tools and collaborate with product teams.'});
+ let generated=0,submitted;
+ await startQuickApplication(s.a,s.queue,'role',1);
+ await s.run('application-inspect',{generateCoverLetter:async input=>{
+  generated++;assert.equal(input.job.description,'Build analytics tools and collaborate with product teams.');assert.equal(input.resume.text,'Synthetic resume');assert.equal(input.fullName,'Example Student');assert.deepEqual(input.fields,[cover]);assert.deepEqual(Object.keys(input).sort(),['fields','fullName','job','resume']);
+  return {text:'Dear hiring team,\n\nI built analytics tools. Thank you for considering my application.',evidence:{resumeQuotes:['Synthetic resume']}};
+ }});
+ const a=await s.current();assert.equal(a.status,'queued');assert.equal(a.answers.cover.value,a.coverLetter.text);assert.match(a.answers.cover.source,/generated cover letter/);
+ await s.run('application-submit',{submit:async args=>{submitted=args;await args.beforeSubmit();return {confirmation:'Application received',confirmedAt:new Date().toISOString()};}});
+ assert.equal(submitted.answers.cover.value,a.coverLetter.text);assert.equal(submitted.coverLetter,undefined);assert.equal((await s.current()).status,'submitted');assert.equal(generated,1);
+ assert.doesNotMatch(s.tasks.filter(j=>j.type==='telegram-send').map(j=>j.payload.text).join('\n'),/Review your application|Ready to send/);
+ assert.match(s.tasks.at(-1).payload.text,/Cover letter: included/);
+ const done=await s.current();await handleLiveApplicationAction(s.a,s.queue,{id:done.id,revision:done.revision,op:'cover-letter'},5);assert.match(s.tasks.at(-1).payload.text,/I built analytics tools/);
+ await assert.rejects(handleLiveApplicationAction(s.b,s.queue,{id:done.id,revision:done.revision,op:'cover-letter'},6),/not available/);
+});
+
+test('required cover PDF is separate from the saved resume and generation is not repeated',async t=>{
+ const s=await setup(t,{form:{...BASE,fields:[...BASE.fields,field('cover','Cover letter','file')]}}),document={name:'Cover Letter.pdf',file:Buffer.from('%PDF-1.7 synthetic cover').toString('base64')};let generated=0;
+ await startQuickApplication(s.a,s.queue,'role',1);const inspect={generateCoverLetter:async()=>{generated++;return {text:'A grounded cover letter.',document};}};
+ await s.run('application-inspect',inspect);await s.run('application-inspect',inspect);
+ assert.equal((await s.current()).answers.cover.value,document.name);
+ await s.run('application-submit',{submit:async args=>{assert.deepEqual(args.coverLetter,document);assert.notEqual(args.coverLetter.file,args.resume.file);await args.beforeSubmit();return {confirmation:'Application received',confirmedAt:new Date().toISOString()};}});
+ assert.equal((await s.current()).status,'submitted');assert.equal(generated,1);
+});
+
+test('optional letters stay omitted and other missing facts prevent automatic letter generation',async t=>{
+ for(const required of [false,true]){
+  const form={...BASE,fields:[...BASE.fields,field('cover','Cover letter','textarea',required),...(required?[field('salary','Salary expectation')]:[])]},s=await setup(t,{form});let generated=0;
+  await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect',{generateCoverLetter:async()=>{generated++;throw Error('should not generate');}});
+  assert.equal(generated,0);assert.equal((await s.current()).status,required?'collecting':'queued');
+  if(!required)assert.equal((await s.current()).answers.cover.value,null);
+ }
+});
+
+test('failed, malformed, or over-limit cover letters never queue submission',async t=>{
+ for(const kind of ['failure','empty','too-long','file-missing']){
+  const s=await setup(t,{form:{...BASE,fields:[...BASE.fields,{...field('cover','Cover letter',kind==='file-missing'?'file':'textarea'),maxLength:40}]}});
+  await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect',{generateCoverLetter:async()=>{
+   if(kind==='failure')throw Object.assign(Error('private model detail'),{code:'COVER_LETTER_INVALID_OUTPUT'});
+   return {text:kind==='empty'?'':kind==='too-long'?'x'.repeat(50):'Valid text but no file.'};
+  }});
+  assert.equal((await s.current()).status,'needs_attention');assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);assert.doesNotMatch(s.tasks.at(-1).payload.text,/private model detail/);
+ }
+});
+
+test('changing the resume text or role description during generation or before submission invalidates cover authorization',async t=>{
+ for(const timing of ['generation','submission'])for(const source of ['resume','job']){
+  const s=await setup(t,{form:{...BASE,fields:[...BASE.fields,field('cover','Cover letter','textarea')]}});
+  const mutate=async()=>source==='resume'?s.a.put('documents','resume',{...(await s.a.get('documents','resume')),text:'Changed source text'}):s.a.put('jobs','role',{...(await s.a.get('jobs','role')),description:'Changed role description'});
+  await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect',{generateCoverLetter:async()=>{if(timing==='generation')await mutate();return {text:'A grounded letter.'};}});
+  if(timing==='submission'){await mutate();await s.run('application-submit');}
+  assert.equal((await s.current()).status,'needs_attention');assert.equal(s.counts().submissions,0);assert.match((await s.current()).error,/changed/);
+ }
+});
+
+test('a quick request authorized before cover-letter support cannot silently add generated content',async t=>{
+ const s=await setup(t,{form:{...BASE,fields:[...BASE.fields,field('cover','Cover letter','textarea')]}});let generated=0;
+ await startQuickApplication(s.a,s.queue,'role',1);const a=await s.current();delete a.coverLetterPolicy;await s.a.put('liveApplications',a.id,a);
+ await s.run('application-inspect',{generateCoverLetter:async()=>{generated++;return {text:'Not authorized'};}});
+ assert.equal(generated,0);assert.equal((await s.current()).status,'needs_attention');assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);
+});
+
+test('required consent and experience are asked in Telegram without inferring answers',async t=>{
  const form={...BASE,fields:[...BASE.fields,field('years','Do you have a minimum of 4 years of product management experience?','radio'),field('consent','I agree to the employer terms','checkbox')]};form.fields.at(-2).options=['Yes','No'];form.fields.at(-1).options=['Yes','No'];
  const s=await setup(t,{form});await editDemographics(s.a,{gender:'male',veteranStatus:'non_veteran'});
  await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect');const a=await s.current();
- assert.equal(a.status,'needs_attention');assert.deepEqual(a.missingFields,form.fields.slice(-2).map(f=>f.label));assert.match(a.error,/Nothing was submitted/);assert.equal(a.answers.years,undefined);assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);assert.deepEqual(s.counts(),{analyses:0,drafts:0,submissions:0});
- const buttons=s.tasks.at(-1).payload.replyMarkup.inline_keyboard.flat();assert.ok(buttons.some(b=>b.text==='Resume & Profile'));assert.ok(buttons.some(b=>b.text==='Use guided application'));
+ assert.equal(a.status,'collecting');assert.deepEqual(a.missingFields,form.fields.slice(-2).map(f=>f.label));assert.match(s.tasks.at(-1).payload.text,/minimum of 4 years/);assert.equal(a.answers.years,undefined);assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);assert.deepEqual(s.counts(),{analyses:0,drafts:0,submissions:0});
+ const buttons=s.tasks.at(-1).payload.replyMarkup.inline_keyboard.flat();assert.ok(buttons.some(b=>b.text==='Resume & Profile'));assert.ok(buttons.some(b=>b.text==='Continue in my browser'));
 });
 
 test('optional demographic and consent fields are omitted; explicit saved SMS/WhatsApp choices can be reused',()=>{
@@ -52,10 +116,10 @@ test('quick application is tenant-scoped and cannot reuse a guided draft',async 
  await startLiveApplication(s.a,s.queue,'role',2);await startQuickApplication(s.a,s.queue,'role',3);
  assert.equal((await s.current()).mode,undefined);assert.equal(s.tasks.filter(j=>j.type==='application-inspect').length,1);assert.match(s.tasks.at(-1).payload.text,/already a guided application/);assert.equal(s.tasks.some(j=>j.type==='application-submit'),false);
 });
-test('required current company stops until explicitly saved, then a fresh Apply now can submit',async t=>{
+test('required current company asks until explicitly saved, then Use saved profile resumes submission',async t=>{
  const form={...BASE,fields:[...BASE.fields,field('org','Current company','text',true,'currentCompany')]},s=await setup(t,{form});
- await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect');assert.equal((await s.current()).status,'needs_attention');assert.deepEqual((await s.current()).missingFields,['Current company']);assert.equal(s.counts().submissions,0);
- await saveCareerProfile(s.a,{currentCompany:'Student Example Company'});await startQuickApplication(s.a,s.queue,'role',2);await s.run('application-inspect');assert.equal((await s.current()).answers.org.value,'Student Example Company');await s.run('application-submit');assert.equal((await s.current()).status,'submitted');assert.deepEqual(s.counts(),{analyses:0,drafts:0,submissions:1});
+ await startQuickApplication(s.a,s.queue,'role',1);await s.run('application-inspect');assert.equal((await s.current()).status,'collecting');assert.deepEqual((await s.current()).missingFields,['Current company']);assert.equal(s.counts().submissions,0);
+ await saveCareerProfile(s.a,{currentCompany:'Student Example Company'});const current=await s.current();await handleLiveApplicationAction(s.a,s.queue,{id:current.id,revision:current.revision,op:'profile'},2);assert.equal((await s.current()).answers.org.value,'Student Example Company');await s.run('application-submit');assert.equal((await s.current()).status,'submitted');assert.deepEqual(s.counts(),{analyses:0,drafts:0,submissions:1});
 });
 test('quick apply reuses office preference only for the exact supported question and choice',()=>{
  const label='Are you comfortable working in-person at the office (in New York or San Francisco) at least 3 days/week?',option='Yes | Currently located in the broader NYC or SF area and comfortable being in the office at least 3 days/week';
