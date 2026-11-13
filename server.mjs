@@ -21,6 +21,7 @@ import {resumeReviewTemplate} from './lib/resume-template.mjs';
 import {readCareerExperience,saveCareerExperience} from './lib/career-experience.mjs';
 import {queueExperienceAnalysis} from './lib/career-experience-jobs.mjs';
 import {importLinkedInConnections,readLinkedInConnections,deleteLinkedInConnections,matchLinkedInConnections,saveLinkedInConnectionSettings} from './lib/linkedin-connections.mjs';
+import {referralMessage} from './lib/linkedin-referrals.mjs';
 import {listJobSources,resolveJobSearchSources,parseJobBoardURL} from './lib/job-source-catalog.mjs';
 import {readJobDiscoverySettings,saveJobDiscoverySettings} from './lib/job-preferences.mjs';
 import {refreshStoredJobMatches,jobMatchingFingerprint} from './lib/job-discovery.mjs';
@@ -338,7 +339,8 @@ async function route(req, res) {
   if(p==='/api/career/linkedin/matches'&&req.method==='GET'){
     const id=url.searchParams.get('jobId');if(!id||!/^[-a-zA-Z0-9._:]{1,200}$/.test(id))throw new HttpError(400,'Choose a saved job.');
     const job=await store.get('jobs',id);if(!job)throw new HttpError(404,'Choose a job in your own workspace.');
-    return json(res,200,await matchLinkedInConnections(store,job.company));
+    const result=await matchLinkedInConnections(store,job.company);
+    return json(res,200,{...result,job:{id:job.id,title:job.title||'',company:job.company||'',applyUrl:job.applyUrl||'',url:job.url||''},matches:result.matches.map(person=>({...person,referralDraft:referralMessage(job,person)}))});
   }
   if (p === '/api/reminders/settings' && req.method === 'POST') return json(res,200,await updateStudentReminders(store,await body(req),queue));
   if (p === '/api/enrollment/analyze' && req.method === 'POST') {

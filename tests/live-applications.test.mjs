@@ -8,18 +8,21 @@ import {listApplicationTracker} from '../lib/application-tracker.mjs';
 import {validateTelegramReplyMarkup} from '../lib/telegram-delivery.mjs';
 import {applicationURL,applicationProviderFor,liveApplicationSupported as providerSupported} from '../lib/application-providers.mjs';
 import {editDemographics} from '../lib/demographics.mjs';
+import {importLinkedInConnections} from '../lib/linkedin-connections.mjs';
+import {handleReferralAction} from '../lib/linkedin-referrals-telegram.mjs';
 const FORM=JSON.parse(await readFile(new URL('./fixtures/ramp-application-form.json',import.meta.url),'utf8'));
 const APP_URL='https://jobs.ashbyhq.com/ramp/a84ae1e2-8c88-4e05-9cb6-fa3e11b55aeb/application';
 function memory(userId){const rows=new Map();return {userId,get:async(b,k)=>structuredClone(rows.get(b+':'+k)||null),put:async(b,k,v)=>rows.set(b+':'+k,structuredClone(v)),delete:async(b,k)=>rows.delete(b+':'+k),all:async b=>[...rows].filter(([k])=>k.startsWith(b+':')).map(([,v])=>structuredClone(v)),compareAndSet:async(b,k,old,next)=>{if(JSON.stringify(rows.get(b+':'+k)||null)!==JSON.stringify(old))return false;rows.set(b+':'+k,structuredClone(next));return true;}};}
-async function setup(t,{profile=true,form=FORM,url=APP_URL,company='Ramp',demographics}={}){
+async function setup(t,{profile=true,form=FORM,url=APP_URL,company='Ramp',demographics,connections}={}){
  const before={APPLICATION_BROWSER_ENABLED:process.env.APPLICATION_BROWSER_ENABLED,APP_ORIGIN:process.env.APP_ORIGIN,PILOT_SHEET_ID:process.env.PILOT_SHEET_ID};t.after(()=>{for(const [k,v]of Object.entries(before)){if(v===undefined)delete process.env[k];else process.env[k]=v;}});process.env.APPLICATION_BROWSER_ENABLED='true';process.env.APP_ORIGIN='https://app.bigredbuddy.com';delete process.env.PILOT_SHEET_ID;
  const a=memory('alice'),b=memory('bob'),sent=[],queue={enqueue:async(userId,type,payload,options)=>{const previous=sent.find(j=>j.options.idempotencyKey===options.idempotencyKey);if(previous)return previous;const job={id:String(sent.length),userId,type,payload,options};sent.push(job);if(type==='telegram-send')validateTelegramReplyMarkup(payload.replyMarkup);return job;}};
  const db={forUser:id=>id==='alice'?a:b};await a.put('jobs','ramp',{id:'ramp',title:form.title,company,applyUrl:url});await a.put('documents','resume',{name:'Example.pdf',file:Buffer.from('%PDF-1.7\nsynthetic').toString('base64'),text:'Example Student\nProduct Manager at Example, 2020 to 2025.'});await a.put('secrets','telegram',{chatId:101,linkedAt:'link-1'});
  if(profile)await saveCareerProfile(a,{fullName:'Example Student',email:'student@example.edu',phone:'+1 212 555 1234',linkedin:'https://www.linkedin.com/in/example',plannedWorkLocation:'New York City, New York, United States',officeThreeDays:'local_nyc_sf',recruitingSMS:'no',recruitingWhatsApp:'no'});
  if(demographics)await editDemographics(a,demographics);
+ if(connections)await importLinkedInConnections(a,{csv:connections});
  const current=async()=>(await a.all('liveApplications'))[0],action=async(op,extra={})=>{const app=await current();return handleLiveApplicationAction(a,queue,{id:app.id,revision:app.revision,op,...extra},'action:'+sent.length);};
  const run=async(type,overrides={})=>{const task=sent.filter(j=>j.type===type).at(-1);return executeLiveApplication(db,task,{queue,inspect:async()=>structuredClone(form),analyze:async()=>({roles:[],analyzed:true}),...overrides});};
- await startLiveApplication(a,queue,'ramp','start');await run('application-inspect');
+ await startLiveApplication(a,queue,'ramp','start');if(sent.some(j=>j.type==='application-inspect'))await run('application-inspect');
  return {a,b,db,queue,sent,current,action,run};
 }
 async function ready(s){
@@ -132,6 +135,30 @@ test('an explicit employer link queues inspection and learns its title without i
 test('reference telephone questions never reuse the applicant phone',async t=>{
  const form={title:'Example role',consentText:'',fields:[{key:'ref-phone',label:'Reference telephone number',type:'tel',required:true,options:[]}]};
  const s=await setup(t,{form});assert.equal((await s.current()).answers['ref-phone'],undefined);
+});
+test('a matching connection offers referral outreach before live application inspection; continuing never submits',async t=>{
+ const s=await setup(t,{connections:'First Name,Last Name,URL,Company,Position,Connected On\nAlex,Rivera,https://www.linkedin.com/in/alex-rivera,Ramp,Designer,2026-01-01'});
+ const offer=s.sent.find(j=>j.type==='telegram-leads');assert.equal(offer.payload.mode,'offer');
+ assert.equal(await s.current(),undefined);assert.equal(s.sent.some(j=>j.type==='application-inspect'),false);
+ await handleReferralAction(s.db,s.a,s.queue,{op:'continue',jobId:'ramp',sourceVersion:offer.payload.sourceVersion},100);
+ await s.run('application-inspect');
+ assert.equal((await s.current()).status,'collecting');assert.equal(s.sent.filter(j=>j.type==='application-inspect').length,1);
+ await startLiveApplication(s.a,s.queue,'ramp',101);
+ assert.equal(s.sent.filter(j=>j.type==='telegram-leads').length,1,'resuming an application must not repeat the referral gate');
+ assert.equal(s.sent.some(j=>j.type==='application-submit'),false);
+});
+test('pasted employer links offer referrals after learning the real title, then continue the inspected form',async t=>{
+ const s=await setup(t),url='https://jobs.lever.co/example/12345678-1234-1234-1234-123456789abc/apply';
+ await importLinkedInConnections(s.a,{csv:'First Name,Last Name,URL,Company,Position,Connected On\nSam,Lee,https://www.linkedin.com/in/sam-lee,Example,Engineer,2026-01-01'});
+ await startLiveApplicationFromURL(s.a,s.queue,url,200);
+ assert.equal(s.sent.some(j=>j.type==='telegram-leads'),false,'do not draft with an unknown job title');
+ const result=await s.run('application-inspect',{inspect:async()=>({title:'Product Manager',consentText:'',fields:[{key:'name',profileField:'fullName',label:'Name',type:'text',required:true,options:[]}]})});
+ assert.equal(result.referralOffered,true);
+ const offer=s.sent.find(j=>j.type==='telegram-leads'),job=await s.a.get('jobs',offer.payload.jobId);assert.equal(job.title,'Product Manager');
+ await handleReferralAction(s.db,s.a,s.queue,{op:'continue',jobId:job.id,sourceVersion:offer.payload.sourceVersion},201);
+ const application=(await s.a.all('liveApplications')).find(a=>a.url===url);assert.equal(application.status,'ready');
+ assert.equal(s.sent.filter(j=>j.type==='application-inspect').length,2,'continuing reuses the previously inspected form');
+ assert.equal(s.sent.some(j=>j.type==='application-submit'),false);
 });
 test('saved demographic suggestions need acceptance and cannot use deleted or changed preferences',async t=>{
  const form={title:'Example role',consentText:'',fields:[{key:'gender',label:'Gender identity',type:'select',required:true,options:['Man','Woman','Non-binary','Prefer not to answer']}]};

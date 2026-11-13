@@ -329,6 +329,11 @@ code { font-size: 13px; line-height: 1.6; background: #edf0f4; color: var(--ink)
 .warm-lead-list li > strong, .warm-lead-list li > span, .warm-lead-list a { display: block; }
 .warm-lead-list li > span { margin: 4px 0 8px; color: var(--muted); font-size: 14px; }
 .warm-lead-list a { font-size: 13px; }
+.referral-message { margin-top: 16px; }
+.referral-message summary { cursor: pointer; font-weight: 600; }
+.referral-message .field { margin-top: 16px; }
+.referral-message textarea { width: 100%; min-height: 180px; resize: vertical; line-height: 1.6; }
+.referral-copy-status { font-size: 13px; }
 @media (max-width: 720px) {
   .linkedin-controls { grid-template-columns: minmax(0, 1fr); gap: 24px; }
   .linkedin-controls form + form { padding-top: 24px; border-top: 1px solid var(--line); }

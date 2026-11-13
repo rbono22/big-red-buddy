@@ -31,7 +31,7 @@ test('daily briefing publication metadata reaches the same final boundary',async
 test('warm lead replies resolve at delivery with no people copied into durable queue payloads',async t=>{
  const {db,store,calls}=await fixture(t),job=row('job-a',HOUR);await store.put('jobs',job.id,job);await importLinkedInConnections(store,{csv});const queued=[];
  await handleCareerMessage(db,{enqueue:async(userId,type,payload,options)=>{queued.push({userId,type,payload,...options});return {id:'queued'};}},store,{text:'/leads job-a',chat:{id:123,type:'private'}},1);
- assert.equal(queued[0].type,'telegram-leads');assert.deepEqual(Object.keys(queued[0].payload).sort(),['jobId','sourceVersion']);assert.doesNotMatch(JSON.stringify(queued),/Alex|private@example/);
+ assert.equal(queued[0].type,'telegram-leads');assert.deepEqual(Object.keys(queued[0].payload).sort(),['expectedChatId','expectedTelegramLinkedAt','jobId','sourceVersion']);assert.doesNotMatch(JSON.stringify(queued),/Alex|private@example/);
  const delivered=await dispatchLinkedInLeads(store,queued[0].payload);assert.equal(delivered.accepted,true);assert.match(calls[0].text,/Alex Example/);assert.doesNotMatch(calls[0].text,/private@example/);assert.match(calls[0].text,/may have changed/);
  await deleteLinkedInConnections(store);assert.equal((await dispatchLinkedInLeads(store,queued[0].payload)).accepted,false);assert.equal(calls.length,1);
 });
