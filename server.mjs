@@ -1,7 +1,7 @@
 import {liveApplicationSupported} from './lib/application-providers.mjs';
 import {startLiveApplication} from './lib/live-applications.mjs';
 import {createApplicationHandoff,redeemApplicationHandoff} from './lib/application-handoff.mjs';
-import {listApplicationAnswerMemory,deleteApplicationAnswerMemory} from './lib/application-answer-memory.mjs';
+import {listApplicationAnswerMemory,deleteApplicationAnswerMemory,listAllSavedAnswers,deleteAnySavedAnswer} from './lib/application-answer-memory.mjs';
 import {personalCalendarStatus,savePersonalCalendars} from './lib/personal-calendar.mjs';
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';
 import {readDailyBriefingSettings,saveDailyBriefingSettings,buildDailyBriefing} from './lib/daily-briefing.mjs';
@@ -17,7 +17,7 @@ import {readNotificationPreferences,saveNotificationPreferences,FRESH_NOTIFICATI
 import {listNews,saveNewsSettings,listNewsLabels,selectNewsLabel,startAutomaticNews,disconnectNews} from './lib/news.mjs';
 import {listAcademicCalendar,addAcademicCalendarEvents} from './lib/academic-calendar.mjs';
 import {listEventEmailLabels,selectEventEmailLabel,enableAutomaticEventEmail,stopEventEmailMonitoring,disconnectEventEmail,listEventEmailInbox} from './lib/event-email.mjs';
-import {getCareerProfile,saveCareerProfile,saveCareerAnswer} from './lib/career.mjs';
+import {getCareerProfile,saveCareerProfile,saveCareerAnswer,saveApplicationAutopilot} from './lib/career.mjs';
 import {DEMOGRAPHIC_FIELDS,getDemographics,editDemographics} from './lib/demographics.mjs';
 import {resumeReviewTemplate} from './lib/resume-template.mjs';
 import {readCareerExperience,saveCareerExperience} from './lib/career-experience.mjs';
@@ -191,7 +191,7 @@ async function state(store) {
     careerExperience:await readCareerExperience(store),
     jobDiscovery:{...listJobSources(),settings:await readJobDiscoverySettings(store)},
     applicationAnswers: await store.all('applicationAnswers'),
-    savedApplicationAnswers: await listApplicationAnswerMemory(store),
+    savedApplicationAnswers: await listAllSavedAnswers(store),
     reminders: await store.all('reminders'),
     activity: (await store.all('activity')).sort((a, b) => b.at.localeCompare(a.at)).slice(0, 30),
     metrics: (await store.all('metrics')).slice(-50),
@@ -469,7 +469,7 @@ async function route(req, res) {
   }
   if(p==='/api/campus/calendars'&&req.method==='GET')return json(res,200,await listCampusCalendars(store));
   if(p==='/api/career/applications'&&req.method==='GET')return json(res,200,await listApplicationTracker(store,{queue}));
-  if(p==='/api/career/saved-answers'&&req.method==='GET')return json(res,200,{answers:await listApplicationAnswerMemory(store)});
+  if(p==='/api/career/saved-answers'&&req.method==='GET')return json(res,200,{answers:await listAllSavedAnswers(store)});
   if(p==='/api/career/demographics'&&req.method==='GET')return json(res,200,{...await getDemographics(store),fields:DEMOGRAPHIC_FIELDS});
   if(p==='/api/partiful/calendars'&&req.method==='GET')return json(res,200,await listPartifulCalendars(store));
   if(p==='/api/luma/calendars'&&req.method==='GET')return json(res,200,await listLumaCalendars(store));
@@ -928,7 +928,12 @@ async function route(req, res) {
   if(p==='/api/career/saved-answers/delete'){
     const b=await body(req);
     if(Object.keys(b).length!==1||typeof b.id!=='string')throw new HttpError(400,'Choose a saved answer from your profile.');
-    return json(res,200,await deleteApplicationAnswerMemory(store,b.id));
+    return json(res,200,await deleteAnySavedAnswer(store,b.id));
+  }
+  if (p === '/api/career/autopilot' && req.method === 'POST') {
+    const result=await saveApplicationAutopilot(store,await body(req));
+    await audit(store,'career',`Application autopilot updated: consents ${result.consents?'on':'off'}, answers ${result.answers?'on':'off'}.`);
+    return json(res,200,result);
   }
   if (p === '/api/career/profile') {
     const patch=await body(req);

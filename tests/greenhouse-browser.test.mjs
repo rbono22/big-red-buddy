@@ -69,3 +69,17 @@ test('Greenhouse validates cover attachment separately and never substitutes the
  assert.doesNotThrow(()=>validateGreenhouseAnswers(f,a,resume,{name:'Cover Letter.pdf',file:Buffer.from('%PDF-1.7\nletter only').toString('base64')}));
  const letter=f.fields.find(f=>f.key==='cover_letter_text');letter.maxLength=10;a.cover_letter_text.value='too long for the employer';assert.throws(()=>validateGreenhouseAnswers(f,a,resume,{name:'Cover Letter.pdf',file:resume.file}),/ANSWER_TOO_LONG/);
 });
+
+test('multi-answer questions: same-named checkboxes become one field and [] ids are accepted only as a literal pair',async()=>{
+ const embed=await readFile(new URL('./fixtures/greenhouse-synthetic-embed-multi.html',import.meta.url),'utf8');
+ const snap=snapshot(embed);assert.equal(snap.title,'Example Strategist');
+ const f=normalizeGreenhouseSnapshot(snap),countries=f.fields.find(x=>x.key==='question_100[]');
+ assert.deepEqual({type:countries.type,multiple:countries.multiple,required:countries.required,label:countries.label,options:countries.options,checkboxIds:countries.checkboxIds},{type:'checkbox',multiple:true,required:true,label:'Which countries could you work in?',options:['United States','Canada','Ireland'],checkboxIds:['question_100[]_1','question_100[]_2','question_100[]_3']});
+ assert.equal(f.fields.find(x=>x.key==='question_200[]').multiple,true);assert.equal(f.fields.filter(x=>x.key.startsWith('question_100')).length,1);
+ for(const id of ['question_1[x]','question_1[','q]','question_1[[]]'])assert.throws(()=>normalizeGreenhouseSnapshot(snapshot(embed.replaceAll('question_100[]',id))),/UNSUPPORTED_FORM/,id);
+ for(const field of f.fields)if(field.widget==='combobox')field.options=['New York','Boston','Denver'];
+ const base={first_name:{reviewed:true,value:'A'},email:{reviewed:true,value:'a@example.org'},_systemfield_resume:{reviewed:true,value:'Example.pdf'},'question_100[]':{reviewed:true,value:'United States\nIreland'},'question_200[]':{reviewed:true,value:'Boston'},'question_300[]':{reviewed:true,value:null}};
+ validateGreenhouseAnswers(f,base,resume);
+ for(const value of ['Germany','Canada\nCanada'])assert.throws(()=>validateGreenhouseAnswers(f,{...base,'question_100[]':{reviewed:true,value}},resume),/INVALID_CHOICE/,value);
+ assert.throws(()=>validateGreenhouseAnswers(f,{...base,'question_100[]':{reviewed:true,value:null}},resume),/MISSING_ANSWER/,'a required group needs at least one choice');
+});

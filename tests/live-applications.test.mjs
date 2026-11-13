@@ -31,7 +31,8 @@ async function ready(s){
 }
 test('destination and resource allowlists reject host confusion and arbitrary employers',()=>{
  assert.equal(ashbyApplicationURL(APP_URL.replace('/application','')),APP_URL);
- for(const url of [APP_URL.replace('/ramp/','/other/'),APP_URL+'?next=evil',APP_URL+'#fragment',APP_URL.replace('jobs.ashbyhq.com','jobs.ashbyhq.com.evil.test'),APP_URL.replace('https://','https://user:pass@'),APP_URL.replace('a84ae1e2','zzzzzzzz'),'http://127.0.0.1/'])assert.equal(ashbyApplicationURL(url),'');
+ assert.equal(ashbyApplicationURL(APP_URL.replace('/ramp/','/notion/')),APP_URL.replace('/ramp/','/notion/'),'any Ashby-hosted employer form is supported');
+ for(const url of [APP_URL.replace('/ramp/','/ra%2Fmp/'),APP_URL.replace('/ramp/','/../'),APP_URL+'?next=evil',APP_URL+'#fragment',APP_URL.replace('jobs.ashbyhq.com','jobs.ashbyhq.com.evil.test'),APP_URL.replace('https://','https://user:pass@'),APP_URL.replace('a84ae1e2','zzzzzzzz'),'http://127.0.0.1/'])assert.equal(ashbyApplicationURL(url),'');
  for(const url of ['http://127.0.0.1','https://evil.test','https://app.ashbyhq.com:444/a','https://user:pass@app.ashbyhq.com'])assert.equal(allowedAshbyResource(url),false);
  assert.equal(allowedAshbyResource('https://app.ashbyhq.com/api/nonsecret'),true);
 });
@@ -181,4 +182,32 @@ test('saved demographic suggestions need acceptance and cannot use deleted or ch
  await editDemographics(s.a,{gender:'female'});await s.action('use-draft',{field:0});a=await s.current();assert.equal(a.answers.gender,undefined);assert.equal(a.drafts.gender.value,'Woman');
  await editDemographics(s.a,{gender:'unanswered'});await s.action('use-draft',{field:0});a=await s.current();assert.equal(a.answers.gender,undefined);assert.equal(a.drafts.gender,undefined);
  await s.action('answer',{field:0,choice:3});assert.equal((await s.current()).answers.gender.value,'Prefer not to answer');assert.equal((await s.current()).status,'ready');
+});
+
+test('Greenhouse feed jobs use the embeddable form, which stays on Greenhouse for employers with their own careers sites',async()=>{
+ const {greenhouseApplicationURL,greenhouseEmbedURL}=await import('../lib/greenhouse-browser.mjs');
+ const embed='https://job-boards.greenhouse.io/embed/job_app?for=stripe&token=8172487';
+ assert.equal(greenhouseEmbedURL('stripe','8172487'),embed);assert.equal(greenhouseApplicationURL(embed),embed);
+ assert.equal(greenhouseApplicationURL('https://boards.greenhouse.io/embed/job_app?for=stripe&token=8172487&gh_src=x'),embed);
+ assert.equal(greenhouseApplicationURL('https://boards.greenhouse.io/figma/jobs/5426468004?gh_jid=5426468004'),'https://job-boards.greenhouse.io/figma/jobs/5426468004');
+ for(const bad of ['https://job-boards.greenhouse.io/embed/job_app?for=stripe&token=8172487&next=https://evil.test','https://job-boards.greenhouse.io/embed/job_app?for=../x&token=1','https://job-boards.greenhouse.io/embed/job_app?for=stripe&token=abc','https://job-boards.greenhouse.io.evil.test/embed/job_app?for=stripe&token=1','https://stripe.com/jobs/search?gh_jid=8172487'])assert.equal(greenhouseApplicationURL(bad),'',bad);
+ assert.equal(greenhouseEmbedURL('stripe','0'),'');assert.equal(greenhouseEmbedURL('a b','1'),'');
+});
+
+test('country code and preferred first name come from saved facts; wording variants reuse saved eligibility only when the meaning matches',async()=>{
+ const {quickApplicationAnswers}=await import('../lib/live-applications.mjs');
+ const profile={firstName:'Sam',location:'New York, NY',workAuthorizationUS:'yes',sponsorship:'no'};
+ const form={fields:[
+  {key:'country',type:'select',label:'Country',required:true,options:['United Kingdom +44','United States +1']},
+  {key:'pref',type:'text',label:'Preferred First Name',required:false,options:[]},
+  {key:'auth',type:'select',label:'Are you authorized to work lawfully in the United States for Duolingo?',required:true,options:['Yes','No']},
+  {key:'sp',type:'select',label:'Will you now, or in the future, require sponsorship (i.e. H-1B visa, etc.) to legally work in the U.S.?',required:true,options:['Yes','No']},
+  {key:'now',type:'select',label:'Do you currently require sponsorship to work in the US?',required:true,options:['Yes','No']},
+  {key:'us',type:'select',label:'Will you require sponsorship from us now or in the future?',required:true,options:['Yes','No']},
+  {key:'where',type:'select',label:'Are you authorized to work in the country for which you applied?',required:true,options:['Yes','No']}
+ ]};
+ const {answers,missing}=quickApplicationAnswers(form,profile,'Resume.pdf');
+ assert.equal(answers.country.value,'United States +1');assert.equal(answers.pref.value,'Sam');assert.equal(answers.auth.value,'Yes');assert.equal(answers.sp.value,'No');
+ assert.deepEqual(missing,['Do you currently require sponsorship to work in the US?','Will you require sponsorship from us now or in the future?','Are you authorized to work in the country for which you applied?']);
+ assert.equal(quickApplicationAnswers({fields:[form.fields[0]]},{...profile,location:'Toronto, ON, Canada'},'Resume.pdf').missing.length,1,'no country is guessed outside the US');
 });

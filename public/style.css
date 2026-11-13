@@ -1416,3 +1416,8 @@ details.course-freshness { padding: 0; border: 0; background: none; margin: 0 0 
   .academic-more > #academic-schedule-area, .academic-setup-body { padding: 16px 16px 4px; }
   .enrollment-empty { flex-direction: column; }
 }
+
+/* Application autopilot */
+#application-autopilot .autopilot-choice + .autopilot-choice { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+#application-autopilot .autopilot-choice .form-help { margin: 6px 0 0 32px; }
+@media (max-width: 640px) { #application-autopilot .autopilot-choice .form-help { margin-left: 0; } }
