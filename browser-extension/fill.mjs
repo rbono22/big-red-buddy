@@ -8,11 +8,14 @@ export async function fillApplication(payload){
  if(!['lever','greenhouse','ashby','workable'].includes(payload.provider))return {...result,error:'This employer form is not supported.'};
  const root=()=>payload.provider==='workable'?document.querySelector('form[data-ui="application-form"]'):payload.provider==='ashby'?document.querySelector('[data-field-path]')?document:null:document.querySelector('#application-form');
  const jobHeading=()=>payload.provider==='lever'?document.querySelector('.posting-header h2')||document.querySelector('h2'):payload.provider==='workable'?document.querySelector('h1[data-ui="job-title"]'):document.querySelector('h1');
- for(let n=0;n<40&&(!root()||!jobHeading());n++)await wait(250);
+ // Greenhouse's embeddable form has no heading; its document title reads "Job Application for <role> at <company>".
+ const jobTitle=()=>{const heading=jobHeading();if(heading)return heading.textContent;if(payload.provider==='greenhouse'){const match=/^Job Application for (.+) at .+$/.exec(document.title||'');return match?match[1]:'';}return '';};
+ for(let n=0;n<40&&(!root()||!jobTitle());n++)await wait(250);
  const form=root();if(!form)return {...result,error:'The employer application form is not ready. Complete it on the website.'};
- const title=jobHeading();if(!title||normalize(title.textContent)!==normalize(payload.title))return {...result,error:'The job title changed. Reopen the handoff from BRB.'};
+ const title=jobTitle();if(!title||normalize(title)!==normalize(payload.title))return {...result,error:'The job title changed. Reopen the handoff from BRB.'};
  const controls=field=>{
   if(payload.provider==='lever'&&field.controlName)return [...form.querySelectorAll(`input[name="${esc(field.controlName)}"]:not([type="hidden"]),textarea[name="${esc(field.controlName)}"],select[name="${esc(field.controlName)}"]`)];
+  if(payload.provider==='greenhouse'&&field.type==='checkbox'&&field.multiple&&Array.isArray(field.checkboxIds))return field.checkboxIds.flatMap(id=>[...form.querySelectorAll(`#${esc(id)}`)]);
   if(payload.provider==='greenhouse'&&field.controlId)return field.type==='radio'&&Array.isArray(field.radioIds)?field.radioIds.flatMap(id=>[...form.querySelectorAll(`#${esc(id)}`)]):[...form.querySelectorAll(`#${esc(field.controlId)}`)];
   if(payload.provider==='ashby')return field.type==='consent'?[...form.querySelectorAll(`input[name="${esc(field.key)}"]`)]:field.type==='yesno'?[...form.querySelectorAll(`[data-field-path="${esc(field.key)}"] button`)]:[...form.querySelectorAll(`[data-field-path="${esc(field.key)}"] input,[data-field-path="${esc(field.key)}"] textarea,[data-field-path="${esc(field.key)}"] select`)];
   if(payload.provider==='workable'){const key=field.key==='_systemfield_resume'?'resume':field.key;return [...form.querySelectorAll(`[name="${esc(key)}"],[data-ui="${esc(key)}"]`)].filter(e=>['INPUT','TEXTAREA','SELECT'].includes(e.tagName));}
@@ -22,7 +25,7 @@ export async function fillApplication(payload){
  const fieldLabel=(field,input)=>{
   if(payload.provider==='ashby')return form.querySelector(`[data-field-path="${esc(field.key)}"] .ashby-application-form-question-title`)?.textContent||input.labels?.[0]?.textContent;
   if(payload.provider==='lever')return input.closest('.application-question')?.querySelector('.application-label')?.textContent||input.labels?.[0]?.textContent;
-  const group=field.type==='radio'?input.closest('fieldset,[role="radiogroup"]'):field.type==='file'?input.closest('.file-upload'):null;
+  const group=field.type==='radio'||field.type==='checkbox'&&field.multiple?input.closest('fieldset,[role="radiogroup"],[role="group"]'):field.type==='file'?input.closest('.file-upload'):null;
   if(group)return group.querySelector('legend')?.textContent||document.getElementById(group.getAttribute('aria-labelledby'))?.textContent;
   const ids=input.getAttribute('aria-labelledby')?.split(/\s+/)||[];
   const labelled=(payload.provider==='workable'?ids.slice(0,1):ids).map(id=>document.getElementById(id)?.textContent||'').join(' ');

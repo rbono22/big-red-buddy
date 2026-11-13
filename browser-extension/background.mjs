@@ -1,7 +1,10 @@
 import {fillApplication} from './fill.mjs';
 
 const BRB='https://app.bigredbuddy.com';
-const canonical=value=>{try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.port||u.search||u.hash)return '';if(u.hostname==='jobs.lever.co'&&/^\/[A-Za-z0-9_-]+\/[a-f0-9-]{36}\/apply$/.test(u.pathname)||u.hostname==='job-boards.greenhouse.io'&&/^\/[A-Za-z0-9_-]+\/jobs\/\d+$/.test(u.pathname)||u.hostname==='jobs.ashbyhq.com'&&/^\/ramp\/[a-f0-9-]{36}\/application$/.test(u.pathname)||u.hostname==='apply.workable.com'&&/^\/valsoft-corp\/j\/[A-F0-9]{10}\/apply\/$/.test(u.pathname))return u.href;return '';}catch{return '';}};
+// Must accept exactly the application URLs BRB's server builds (lib/application-providers.mjs).
+// Greenhouse employers with their own careers sites are filled through Greenhouse's embeddable form.
+const greenhouseEmbed=u=>{const keys=[...u.searchParams.keys()];return u.hostname==='job-boards.greenhouse.io'&&u.pathname==='/embed/job_app'&&keys.length===2&&keys[0]==='for'&&keys[1]==='token'&&/^[A-Za-z0-9_-]{1,100}$/.test(u.searchParams.get('for'))&&/^[1-9][0-9]{0,15}$/.test(u.searchParams.get('token'));};
+const canonical=value=>{try{const u=new URL(value);if(u.protocol!=='https:'||u.username||u.password||u.port||u.hash)return '';if(greenhouseEmbed(u))return u.href;if(u.search)return '';if(u.hostname==='jobs.lever.co'&&/^\/[A-Za-z0-9_-]+\/[a-f0-9-]{36}\/apply$/.test(u.pathname)||u.hostname==='job-boards.greenhouse.io'&&/^\/[A-Za-z0-9_-]+\/jobs\/\d+$/.test(u.pathname)||u.hostname==='jobs.ashbyhq.com'&&/^\/[A-Za-z0-9._-]{1,100}\/[a-f0-9-]{36}\/application$/.test(u.pathname)||u.hostname==='apply.workable.com'&&/^\/valsoft-corp\/j\/[A-F0-9]{10}\/apply\/$/.test(u.pathname))return u.href;return '';}catch{return '';}};
 
 // This function executes only inside the student's authenticated BRB tab.
 async function redeemInBRB(){

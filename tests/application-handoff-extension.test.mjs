@@ -58,3 +58,20 @@ test('only the installed extension popup can trigger a handoff',async()=>{
  const manifest=JSON.parse(await readFile(new URL('../browser-extension/manifest.json',import.meta.url),'utf8'));
  assert.deepEqual(manifest.permissions,['activeTab','scripting']);assert.equal(manifest.host_permissions.length,5);assert.equal(manifest.content_scripts,undefined);assert.equal(manifest.externally_connectable,undefined);
 });
+test('extension accepts the exact application URLs the server builds, including Greenhouse embeds and any Ashby employer',async()=>{
+ for(const url of ['https://job-boards.greenhouse.io/embed/job_app?for=figma&token=5426468004','https://job-boards.greenhouse.io/figma/jobs/5426468004','https://jobs.ashbyhq.com/notion/1fc309c8-da20-4ff2-84c7-8b863ece2b0a/application']){
+  const f=await fixture({url}),result=await f.run();assert.equal(result.ok,true,url);assert.equal(f.calls.find(c=>c.kind==='open').url,url);assert.equal(f.exports.length,1);
+ }
+ for(const url of ['https://job-boards.greenhouse.io/embed/job_app?for=figma&token=5426468004&next=https://evil.test','https://job-boards.greenhouse.io/embed/job_app?token=5426468004&for=figma','https://job-boards.greenhouse.io/embed/job_app?for=../x&token=1','https://job-boards.greenhouse.io.evil.test/embed/job_app?for=figma&token=1','https://jobs.ashbyhq.com/notion/1fc309c8-da20-4ff2-84c7-8b863ece2b0a/application?x=1','https://stripe.com/jobs/search?gh_jid=8172487']){
+  const f=await fixture({url}),result=await f.run();assert.equal(result.ok,false,url);assert.equal(f.calls.some(c=>c.kind==='open'),false,url);assert.equal(f.exports.length,0);
+ }
+});
+test('the downloadable helper zip matches the helper source, so a fix always ships to students',async()=>{
+ const {execFileSync}=await import('node:child_process');
+ for(const name of ['manifest.json','background.mjs','fill.mjs','popup.html','popup.css','popup.js','README.md']){
+  const zipped=execFileSync('unzip',['-p','public/browser-helper.zip',`BRB-browser-helper/${name}`]);
+  assert.ok(zipped.equals(await readFile(`browser-extension/${name}`)),`public/browser-helper.zip is stale for ${name}; rebuild it from browser-extension/`);
+ }
+ const version=JSON.parse(await readFile('browser-extension/manifest.json','utf8')).version;
+ assert.match(await readFile('public/app.js','utf8'),new RegExp(`version ${version.replaceAll('.','\\.')}</strong>`),'the install instructions show the current helper version');
+});
