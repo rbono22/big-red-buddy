@@ -125,3 +125,16 @@ test('with autopilot on, new questions are answered from the resume while factua
  assert.equal(app.status,'collecting');assert.deepEqual(app.missingFields,['Have you ever been convicted of a felony?']);
  const off=await harness(t);app=await off.apply(SPLUNK,[built]);assert.equal(app.status,'collecting');assert.equal(app.answers.built,undefined);assert.equal(off.calls(),0);
 });
+
+test('Resume & Profile lists common and AI-written answers alongside exact answers, and each can be deleted',async()=>{
+ const {listAllSavedAnswers,deleteAnySavedAnswer}=await import('../lib/application-answer-memory.mjs');
+ const s=await student();
+ await rememberCommonAnswer(s,{field:f('How did you hear about this job?','select',['LinkedIn','Other']),job:SPLUNK,value:'LinkedIn'});
+ await rememberCommonAnswer(s,{field:f('What are you most proud of building?','textarea'),job:SPLUNK,value:'A forecasting tool.',source:AUTOPILOT_SOURCE});
+ const listed=await listAllSavedAnswers(s);
+ assert.equal(listed.filter(a=>a.kind==='common').length>=1,true);
+ const heard=listed.find(a=>/hear/i.test(a.question));assert.ok(heard);assert.equal(heard.scope,'global');assert.match(heard.scopeExplanation,/any employer/);
+ for(const answer of listed){assert.match(answer.id,/^[a-f0-9]{64}$/);assert.deepEqual(await deleteAnySavedAnswer(s,answer.id),{deleted:true,id:answer.id});}
+ assert.deepEqual(await listAllSavedAnswers(s),[]);
+ await assert.rejects(deleteAnySavedAnswer(s,'f'.repeat(64)),{status:404});
+});
