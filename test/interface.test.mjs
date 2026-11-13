@@ -515,11 +515,16 @@ test('career profile saves explicit facts only and keeps optional demographics s
   assert.equal(view.document.querySelector('#career-profile-veteranStatus'),null);
   view.document.querySelector('#career-profile-fullName').value = 'Explicit Student';
   view.document.querySelector('#career-profile-email').value = 'chosen@cornell.edu';
+  view.document.querySelector('#career-profile-plannedWorkLocation').value='New York City, New York, United States';
+  selectOption(view.document.querySelector('#career-profile-officeThreeDays'),'local_nyc_sf');
+  selectOption(view.document.querySelector('#career-profile-recruitingSMS'),'no');
+  selectOption(view.document.querySelector('#career-profile-recruitingWhatsApp'),'yes');
   selectOption(view.document.querySelector('#career-profile-workAuthorizationUS'), 'yes');
   view.document.querySelector('#career-profile-form').dispatchEvent(new view.window.Event('submit', { bubbles: true, cancelable: true })); await settled();
   const request = view.requests.find(r => r.url === '/api/career/profile'), data = JSON.parse(request.options.body);
   assert.equal(data.fullName, 'Explicit Student'); assert.equal(data.email, 'chosen@cornell.edu'); assert.equal(data.workAuthorizationUS, 'yes');
-  assert.equal(data.sponsorship, 'unanswered'); assert.equal(data.veteranStatus, undefined); assert.equal(Object.keys(data).length, 9);
+  assert.equal(data.sponsorship, 'unanswered'); assert.equal(data.veteranStatus, undefined); assert.equal(Object.keys(data).length, 13);
+  assert.equal(data.plannedWorkLocation,'New York City, New York, United States');assert.equal(data.officeThreeDays,'local_nyc_sf');assert.equal(data.recruitingSMS,'no');assert.equal(data.recruitingWhatsApp,'yes');
   assert.equal(request.options.headers['X-CSRF-Token'], 'fixture');
   assert.match(view.document.querySelector('.career-profile').textContent, /Nothing was sent to an employer/);
 });
@@ -718,7 +723,7 @@ test('application tracker displays every account record in its own tab with expl
  const fixture=applicationTrackerFixture(),view=await renderDesignFixture(fixture);view.navigate('careers');const tracker=view.document.querySelector('#application-tracker'),main=view.document.querySelector('#main');
  assert.equal(tracker.querySelectorAll('tbody tr').length,4);clickUI(view,'[data-action="career-tab"][data-tab="applications"]');assert.equal(view.document.querySelector('#career-panel-applications').hasAttribute('hidden'),false);assert.equal(view.document.querySelector('#career-panel-jobs').hasAttribute('hidden'),true);assert.equal(tracker.querySelector('img,script'),null);assert.match(tracker.textContent,/<img src=x>/);assert.equal(tracker.querySelector('a[href^="javascript:"]'),null);assert.equal(tracker.querySelector('a[href="https://example.com/product"]').getAttribute('rel'),'noreferrer');
  const queued=tracker.querySelector('[data-tracker-id="tracker-queued"]');assert.match(queued.textContent,/3\+ years/);assert.match(queued.textContent,/Telegram/);assert.match(queued.textContent,/Preparing/);assert.match(queued.textContent,/Nov 10, 2026/);
- const prepared=tracker.querySelector('[data-tracker-id="tracker-prepared"]');assert.doesNotMatch(prepared.textContent,/10 years/);assert.match(prepared.textContent,/Not specified/);assert.match(tracker.textContent,/Previous draft/);assert.match(tracker.textContent,/Submitted \(student-reported\)/);assert.match(tracker.textContent,/has not confirmed receipt/);assert.ok(tracker.querySelector('caption'));assert.equal(tracker.querySelectorAll('th[scope="col"]').length,6);
+ const prepared=tracker.querySelector('[data-tracker-id="tracker-prepared"]');assert.doesNotMatch(prepared.textContent,/10 years/);assert.match(prepared.textContent,/Not specified/);assert.match(tracker.textContent,/Previous draft/);assert.match(tracker.textContent,/Submitted \(student-reported\)/);assert.match(tracker.textContent,/Employer-confirmed receipts are labeled separately/);assert.ok(tracker.querySelector('caption'));assert.equal(tracker.querySelectorAll('th[scope="col"]').length,6);
 });
 test('application submission report and correction send only the owned tracker ID and explicit status',async()=>{
  const fixture=applicationTrackerFixture(),view=await renderDesignFixture(fixture,{'/api/career/application-status':options=>{const data=JSON.parse(options.body),row=fixture.applicationTracker.find(item=>item.id===data.id);row.status=data.status;row.submissionReportedAt='2026-11-10T18:00:00Z';return row;}});view.navigate('careers');
@@ -1202,3 +1207,15 @@ test('an upload with no matching classes is one short card that can be dismissed
  clickUI(view,'[data-action="dismiss-enrollment"]');await settled();
  assert.deepEqual(JSON.parse(view.requests.find(r=>r.url==='/api/enrollment/dismiss').options.body),{id:'a'.repeat(32)});assert.equal(view.document.querySelector('.enrollment-empty'),null);
 });
+
+
+test('supported jobs start real Telegram review and employer receipts cannot be edited into self-reported status',async()=>{
+ const fixture=applicationTrackerFixture();fixture.resume={name:'Example.pdf'};fixture.jobs=[{id:'ramp',title:'Product Manager',company:'Ramp',applyUrl:'https://jobs.ashbyhq.com/ramp/a84ae1e2-8c88-4e05-9cb6-fa3e11b55aeb/application',telegramApplication:true,publishedAt:'2026-11-10T20:00:00Z'}];
+ fixture.applicationTracker.push({id:'live',jobId:'ramp',title:'Product Manager',company:'Ramp',liveApplicationId:'abc',status:'submitted',statusLabel:'Submitted (employer confirmed)',submissionSource:'employer-confirmed',statusNote:'Application submitted!',source:'telegram'});
+ const view=await renderDesignFixture(fixture,{'/api/career/live-application':{started:true}});view.navigate('careers');
+ const button=view.document.querySelector('[data-action="live-job"]');assert.ok(button);assert.equal(button.textContent,'Apply via Telegram');button.dispatchEvent(new view.window.Event('click',{bubbles:true}));await settled();
+ const request=view.requests.find(r=>r.url==='/api/career/live-application');assert.deepEqual(JSON.parse(request.options.body),{id:'ramp'});assert.equal(request.options.headers['X-CSRF-Token'],'fixture');
+ const row=view.document.querySelector('[data-tracker-id="live"]');assert.match(row.textContent,/Submitted \(employer confirmed\)/);assert.equal(row.querySelector('[data-action="application-tracker-status"]'),null);
+});
+
+test('Telegram profile link opens the reusable application fields directly',async()=>{const view=await renderDesignFixture(careerFixture());view.navigate('career-profile');assert.equal(view.document.querySelector('#career-panel-profile').hasAttribute('hidden'),false);assert.equal(view.document.querySelector('#career-profile-details').hasAttribute('open'),true);assert.ok(view.document.querySelector('#career-profile-recruitingSMS'));});

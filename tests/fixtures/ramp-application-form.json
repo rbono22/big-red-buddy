@@ -1,0 +1,117 @@
+{
+  "title": "Product Manager | Bill Pay",
+  "fields": [
+    {
+      "key": "_systemfield_name",
+      "label": "Legal Name",
+      "type": "text",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "_systemfield_email",
+      "label": "Email",
+      "type": "email",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "b97c266b-4d4d-4e5b-b817-a75bb77ff939",
+      "label": "Phone",
+      "type": "tel",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "_systemfield_location",
+      "label": "Where do you plan on working from (for payroll tax purposes)?",
+      "type": "location",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "d0c10f36-906d-41f8-933f-cf7cb8664d90",
+      "label": "Are you comfortable working in-person at the office (in New York or San Francisco) at least 3 days/week?",
+      "type": "radio",
+      "required": true,
+      "options": [
+        "No | Would prefer to work remotely",
+        "Yes | Able to relocate to the NYC or SF area upon offer acceptance and comfortable being in the office at least 3 days/week",
+        "Yes | Currently located in the broader NYC or SF area and comfortable being in the office at least 3 days/week"
+      ]
+    },
+    {
+      "key": "_systemfield_resume",
+      "label": "Resume",
+      "type": "file",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "3cda4485-d9df-42c9-bf25-ccca50398c14",
+      "label": "LinkedIn Profile",
+      "type": "text",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "62febb8e-7830-4acb-9b87-fa58aefddce5",
+      "label": "Do you have a minimum of 4 years of product management experience?",
+      "type": "yesno",
+      "required": true,
+      "options": [
+        "Yes",
+        "No"
+      ]
+    },
+    {
+      "key": "c320b72a-6408-4eea-b5df-a215369853e5",
+      "label": "Can you share an example of how you’ve integrated an AI tool into your product development workflow (e.g., research, PRDs, data analysis, design brainstorming)?",
+      "type": "textarea",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "37603a33-ad61-4287-a83d-6d7d94db689b",
+      "label": "Why do you want to work at Ramp?",
+      "type": "textarea",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "0c35df8e-307d-4976-9a95-de795a3c0986",
+      "label": "Have you owned a product area from customer discovery through launch and measured adoption after launch? If yes, briefly describe how you measured adoption",
+      "type": "textarea",
+      "required": true,
+      "options": []
+    },
+    {
+      "key": "64157536-a836-4d08-be51-ee4ec8cb3fb6",
+      "label": "Optional: Share something you built that you’re proud of—a product, prototype, AI project, or other work sample. Briefly describe your contribution and why you’re proud of it.",
+      "type": "textarea",
+      "required": false,
+      "options": []
+    },
+    {
+      "key": "smsConsent",
+      "label": "Recruiting updates by SMS",
+      "type": "consent",
+      "required": true,
+      "options": [
+        "Yes - I consent to receiving SMS text messages",
+        "No - I do not consent to receiving SMS text messages"
+      ]
+    },
+    {
+      "key": "whatsAppConsent",
+      "label": "Recruiting updates by WhatsApp",
+      "type": "consent",
+      "required": true,
+      "options": [
+        "Yes - I consent to receiving WhatsApp messages",
+        "No - I do not consent to receiving WhatsApp messages"
+      ]
+    }
+  ],
+  "consentText": "Check Yes or No to indicate your agreement to receive text message updates via SMS and/or WhatsApp from Ramp Business Corporation regarding your job application. Frequency may vary. Message and data rates may apply. Reply STOP to opt out of future messaging. View our privacy policy here: Privacy Policy and our terms and conditions here: Terms and Conditions SMS Yes - I consent to receiving SMS text messages No - I do not consent to receiving SMS text messages WhatsApp Yes - I consent to receiving WhatsApp messages No - I do not consent to receiving WhatsApp messages"
+}

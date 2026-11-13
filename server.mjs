@@ -1,3 +1,5 @@
+import {liveApplicationSupported} from './lib/ashby-browser.mjs';
+import {startLiveApplication} from './lib/live-applications.mjs';
 import {personalCalendarStatus,savePersonalCalendars} from './lib/personal-calendar.mjs';
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';
 import {readDailyBriefingSettings,saveDailyBriefingSettings,buildDailyBriefing} from './lib/daily-briefing.mjs';
@@ -175,7 +177,7 @@ async function state(store) {
     jobAlertsHealth:await store.get('settings','jobAlertsHealth'),
     events: (await store.all('events')).sort((a, b) => (a.start || a.date).localeCompare(b.start || b.date)),
     sources: await store.all('sources'),
-    jobs: await listCareerJobs(store),
+    jobs: (await listCareerJobs(store)).map(job=>({...job,telegramApplication:liveApplicationSupported(job)})),
     linkedinConnections:await readLinkedInConnections(store),
     applications: await store.all('applications'),
     applicationTracker: await listApplicationTracker(store,{queue}),
@@ -888,6 +890,11 @@ async function route(req, res) {
   }
   if(p==='/api/career/linkedin/settings')return json(res,200,await saveLinkedInConnectionSettings(store,await body(req)));
   if(p==='/api/career/linkedin/delete'){const b=await body(req);if(!b||typeof b!=='object'||Array.isArray(b)||Object.keys(b).length)throw new HttpError(400,'Use an empty deletion request.');return json(res,200,await deleteLinkedInConnections(store));}
+  if(p==='/api/career/live-application'){
+    heavyLimiter.check(user.id);const b=await body(req);
+    if(!b||typeof b.id!=='string'||Object.keys(b).some(k=>k!=='id'))throw new HttpError(400,'Choose a saved job.');
+    await startLiveApplication(store,queue,b.id,`web-application:${randomBytes(16).toString('hex')}`);return json(res,202,{started:true});
+  }
   if (p === '/api/career/profile') {
     const patch=await body(req);
     if(patch&&typeof patch==='object'&&Object.hasOwn(patch,'veteranStatus'))throw new HttpError(400,'Save veteran status in Optional self-identification. Refresh this page to use the updated form.');
