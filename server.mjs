@@ -17,7 +17,7 @@ import {readNotificationPreferences,saveNotificationPreferences,FRESH_NOTIFICATI
 import {listNews,saveNewsSettings,listNewsLabels,selectNewsLabel,startAutomaticNews,disconnectNews} from './lib/news.mjs';
 import {listAcademicCalendar,addAcademicCalendarEvents} from './lib/academic-calendar.mjs';
 import {listEventEmailLabels,selectEventEmailLabel,enableAutomaticEventEmail,stopEventEmailMonitoring,disconnectEventEmail,listEventEmailInbox} from './lib/event-email.mjs';
-import {getCareerProfile,saveCareerProfile,saveCareerAnswer} from './lib/career.mjs';
+import {getCareerProfile,saveCareerProfile,saveCareerAnswer,saveApplicationAutopilot} from './lib/career.mjs';
 import {DEMOGRAPHIC_FIELDS,getDemographics,editDemographics} from './lib/demographics.mjs';
 import {resumeReviewTemplate} from './lib/resume-template.mjs';
 import {readCareerExperience,saveCareerExperience} from './lib/career-experience.mjs';
@@ -929,6 +929,11 @@ async function route(req, res) {
     const b=await body(req);
     if(Object.keys(b).length!==1||typeof b.id!=='string')throw new HttpError(400,'Choose a saved answer from your profile.');
     return json(res,200,await deleteApplicationAnswerMemory(store,b.id));
+  }
+  if (p === '/api/career/autopilot' && req.method === 'POST') {
+    const result=await saveApplicationAutopilot(store,await body(req));
+    await audit(store,'career',`Application autopilot updated: consents ${result.consents?'on':'off'}, answers ${result.answers?'on':'off'}.`);
+    return json(res,200,result);
   }
   if (p === '/api/career/profile') {
     const patch=await body(req);
