@@ -2,6 +2,8 @@
 
 First sign into BRB, connect your own Google Calendar, and link your own private Telegram chat under Connections. All students use the same bot with separate account ownership.
 
+The website and Telegram share one local reader: Microsoft MarkItDown extracts PDF text, with Poppler as a fallback; Tesseract or Apple Vision reads photos and scanned pages. MarkItDown's image metadata is not used as a substitute for OCR, and no cloud image-captioning service is enabled. Send PDF, JPEG, or PNG; resume uploads require PDF. Other image formats, including HEIC, still need conversion to JPEG/PNG. Installing MarkItDown does not enable reading Gmail attachments.
+
 ## Invitation screenshots
 
 1. Send `/invite`, then attach a clear screenshot of a Luma, Partiful, SMS, or WhatsApp invitation. You can also put `invite` in the photo caption. An unlabelled image outside an active upload flow offers an **Event invitation** button.

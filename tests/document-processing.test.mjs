@@ -10,6 +10,7 @@ const native='Synthetic economics syllabus, Fall 2026. Keep this exact searchabl
 const image=(page,{small=false}={})=>`${page} 0 image ${small?'100 100':'1200 1600'} rgb 3 8 jpeg no 4 0 ${small?'200 200':'150 150'} 36K 0.6%`;
 function synthetic({pages=1,text=Array.from({length:pages},()=>native).join('\f'),images='',recognize=async page=>`Research deck ${page} due December 1, 2026 at 5 pm.`,engine='tesseract',run}={}){
  const calls=[],metrics={engineLookups:0,active:0,peak:0},options={
+  resolveMarkdown:async()=>null,
   resolveOCR:async()=>{metrics.engineLookups++;return{kind:engine,program:`/synthetic/${engine}`};},
   runCommand:async(program,args,settings)=>{
    calls.push({program,args,settings});
@@ -105,4 +106,38 @@ test('oversized combined text and timed-out native tools fail safely and clean u
  const timed=synthetic({run:async(program,args,settings)=>{directory=settings.env.TMPDIR;if(program==='pdfinfo')throw Object.assign(new Error('private file details'),{killed:true});}});
  await assert.rejects(readLocalDocumentText(input,timed.options),error=>error.status===408&&error.code==='enrollment_timeout'&&!error.message.includes('private file'));
  await assert.rejects(access(directory),error=>error.code==='ENOENT');
+});
+
+test('MarkItDown is the PDF reader while page order, mixed-page OCR and isolated execution stay intact',async()=>{
+ const converted=['Selectable requirement page 1. Deadline December 1, 2026 at 5 pm.',native,''],fixture=synthetic({pages:3,images:[image(2),image(3)].join('\n'),run:async program=>program==='/synthetic/python'?{stdout:JSON.stringify({version:1,engine:'markitdown',packageVersion:'0.1.9',pages:converted})}:null});
+ const result=await readLocalDocumentText(input,{...fixture.options,resolveMarkdown:async()=>'/synthetic/python'}),pages=result.text.split('\f');
+ assert.equal(result.extractionMetrics.pdfParser,'markitdown');assert.equal(result.extractionMetrics.markitdownVersion,'0.1.9');assert.match(result.method,/MarkItDown PDF text/);assert.equal(pages.length,3);assert.match(pages[0],/page 1/);assert.match(pages[1],/exact searchable requirement/);assert.match(pages[1],/Research deck 2/);assert.match(pages[2],/Research deck 3/);
+ assert.equal(fixture.calls.filter(call=>call.program==='pdftotext').length,0);assert.equal(fixture.calls.filter(call=>call.program==='pdfimages').length,1);
+ const conversion=fixture.calls.find(call=>call.program==='/synthetic/python');assert.equal(conversion.args[0],'-I');assert.match(conversion.args[1],/scripts\/markitdown_extract\.py$/);assert.equal(conversion.args[3],'--pages');assert.equal(conversion.args[4],'3');assert.equal(conversion.settings.env.HOME,conversion.settings.env.TMPDIR);assert.equal(conversion.settings.killSignal,'SIGKILL');assert.ok(conversion.settings.timeout<=25000);assert.deepEqual(Object.keys(conversion.settings.env).filter(key=>/TOKEN|SECRET|PASSWORD|DATABASE|PYTHONPATH/.test(key)),[]);
+});
+
+test('failed, malformed, incomplete and oversized MarkItDown conversions fall back without leaking source errors',async()=>{
+ for(const output of [null,'private text instead of JSON',JSON.stringify({version:1,engine:'markitdown',packageVersion:'0.1.9',pages:[]}),JSON.stringify({version:1,engine:'markitdown',packageVersion:'0.1.9',pages:['x'.repeat(200001)]})]){
+  let directory;const fixture=synthetic({run:async(program,args,settings)=>{if(program!=='/synthetic/python')return;directory=settings.env.TMPDIR;if(output===null)throw new Error('PRIVATE_PDF_CONTENT');return {stdout:output};}});
+  const result=await readLocalDocumentText(input,{...fixture.options,resolveMarkdown:async()=>'/synthetic/python'});
+  assert.equal(result.text,native);assert.equal(result.extractionMetrics.pdfParser,'poppler');assert.equal(result.extractionMetrics.pdfParserFallback,'conversion_failed');assert.equal(fixture.calls.filter(call=>call.program==='pdftotext').length,1);assert.match(result.warnings[0],/fallback reader/);assert.doesNotMatch(JSON.stringify(result),/PRIVATE_PDF_CONTENT|private text instead/);await assert.rejects(access(directory),{code:'ENOENT'});
+ }
+});
+
+test('a timed-out MarkItDown subprocess can recover through the bounded native reader',async()=>{
+ const fixture=synthetic({run:async program=>{if(program==='/synthetic/python')throw Object.assign(new Error('PRIVATE_PATH'),{killed:true});}});
+ const result=await readLocalDocumentText(input,{...fixture.options,resolveMarkdown:async()=>'/synthetic/python'});assert.equal(result.text,native);assert.equal(result.extractionMetrics.pdfParserFallback,'timeout');assert.doesNotMatch(JSON.stringify(result),/PRIVATE_PATH/);
+});
+
+test('PDF page count and encryption are checked before MarkItDown starts',async()=>{
+ for(const info of ['Pages: 7\nEncrypted: no\n','Pages: 1\nEncrypted: yes\n']){
+  const fixture=synthetic({run:async program=>program==='pdfinfo'?{stdout:info}:null});let resolverCalls=0;
+  await assert.rejects(readLocalDocumentText(input,{...fixture.options,resolveMarkdown:async()=>{resolverCalls++;return '/synthetic/python';}}));assert.equal(resolverCalls,0);assert.equal(fixture.calls.length,1);
+ }
+});
+
+test('photos remain real local OCR and never treat image metadata as document text',async()=>{
+ const png=Buffer.alloc(33);Buffer.from([137,80,78,71,13,10,26,10]).copy(png);png.writeUInt32BE(13,8);png.write('IHDR',12);png.writeUInt32BE(500,16);png.writeUInt32BE(500,20);
+ const fixture=synthetic({recognize:async()=>native});
+ const result=await readLocalDocumentText({buffer:png,mimeType:'image/png'},{...fixture.options,resolveMarkdown:()=>assert.fail('Photos must use local OCR rather than MarkItDown metadata')});assert.equal(result.text,native);assert.equal(result.extractionMetrics.ocrPages,1);assert.match(result.method,/local Tesseract OCR/);
 });

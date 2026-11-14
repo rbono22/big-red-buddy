@@ -83,7 +83,7 @@ test('catalog block reasons, dates provenance, and stable row IDs survive review
 test('searchable PDFs use local text extraction, respect page limits, and return no raw document', {skip:!hasPoppler},async()=>{
   const catalog={get:async()=>snapshot()};
   const result=await analyzeEnrollment({buffer:textPDF(['My Fall 2026 Class Schedule','NBAY 5300-001 (18400)','INFO 6410-030 (16714)']),mimeType:'application/pdf',name:'synthetic.pdf',term:'FA26'},catalog);
-  assert.equal(result.candidates.length,2);assert.equal(result.method,'PDF text');assert.equal(result.rawTextRetained,false);
+  assert.equal(result.candidates.length,2);assert.match(result.method,/^(?:MarkItDown )?PDF text$/);assert.equal(result.rawTextRetained,false);
   await assert.rejects(analyzeEnrollment({buffer:textPDF(['NBAY 5300-001 (18400)'],7),mimeType:'application/pdf',term:'FA26'},catalog),/6 pages/);
 });
 
@@ -122,7 +122,7 @@ test('syllabus photos and searchable PDFs use local OCR/text extraction without 
 test('six searchable syllabus pages with small logos do not exhaust the scanned-page OCR limit',{skip:!hasPoppler},async()=>{
  const buffer=illustratedPDF({pages:6,lines:['Synthetic economics syllabus, Fall 2026','Research deck due December 1, 2026 at 5 pm.'],image:deflateSync(Buffer.alloc(100*100*3,80)),width:100,height:100});
  const result=await readLocalDocumentText({buffer,mimeType:'application/pdf',term:'FA26'});
- assert.equal(result.method,'PDF text');assert.equal((result.text.match(/Research deck due December 1/g)||[]).length,6);
+ assert.match(result.method,/^(?:MarkItDown )?PDF text$/);assert.equal((result.text.match(/Research deck due December 1/g)||[]).length,6);
  assert.equal(result.warnings.filter(warning=>warning.includes('Small embedded illustrations')).length,6);
 });
 

@@ -35,6 +35,7 @@ jobs:
           --health-retries 5
     env:
       TEST_POSTGRES_ADMIN_URL: postgresql://postgres@127.0.0.1:5432/postgres
+      REQUIRE_MARKITDOWN_TESTS: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -46,14 +47,49 @@ jobs:
       - name: Install PDF and image extraction tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-eng
+          sudo apt-get install --yes --no-install-recommends poppler-utils tesseract-ocr tesseract-ocr-eng python3-venv
+      - name: Install pinned local PDF converter
+        run: |
+          python3 -m venv .venv-markitdown
+          .venv-markitdown/bin/python -m pip install --no-cache-dir -r requirements-markitdown.txt
+          .venv-markitdown/bin/python -I scripts/markitdown_extract.py --check
+      - name: Audit resolved Python conversion dependencies
+        run: |
+          .venv-markitdown/bin/python -m pip freeze > "$RUNNER_TEMP/brb-python-resolved.txt"
+          python3 -m venv "$RUNNER_TEMP/brb-python-audit"
+          "$RUNNER_TEMP/brb-python-audit/bin/python" -m pip install --no-cache-dir pip-audit==2.10.1
+          "$RUNNER_TEMP/brb-python-audit/bin/pip-audit" --no-deps --disable-pip -r "$RUNNER_TEMP/brb-python-resolved.txt"
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev --audit-level=high
       - run: npm test
-      - run: node scripts/check-deployment.mjs --require-docker
+      - run: node scripts/check-deployment.mjs --require-docker --require-markitdown
       - name: Validate proxy configuration
         run: docker run --rm -e APP_DOMAIN=assistant.example.edu -e ACME_EMAIL=operator@example.edu -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile
       - name: Build runtime image
         run: docker build --tag dabas-ci .
       - name: Verify image uses a nonroot account
         run: test "$(docker image inspect dabas-ci --format '{{.Config.User}}')" = node
+      - name: Audit resolved image Python dependencies
+        run: |
+          docker run --rm --network none --read-only --entrypoint /opt/brb-markitdown/bin/python dabas-ci -m pip freeze > "$RUNNER_TEMP/brb-image-python-resolved.txt"
+          "$RUNNER_TEMP/brb-python-audit/bin/pip-audit" --no-deps --disable-pip -r "$RUNNER_TEMP/brb-image-python-resolved.txt"
+      - name: Verify packaged converter without network or writable root
+        run: docker run --rm --network none --read-only --entrypoint /opt/brb-markitdown/bin/python dabas-ci -I /app/scripts/markitdown_extract.py --check
+      - name: Convert a synthetic PDF under runtime restrictions
+        run: |
+          docker run --rm --network none --read-only --memory 1g --pids-limit 128 --mount "type=bind,source=$PWD/tests/fixtures/documents,target=/fixtures,readonly" --entrypoint /opt/brb-markitdown/bin/python dabas-ci -I /app/scripts/markitdown_extract.py /fixtures/searchable.pdf --pages 2 > "$RUNNER_TEMP/brb-image-pdf.json"
+          node --input-type=module - "$RUNNER_TEMP/brb-image-pdf.json" <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync} from 'node:fs';
+          const result = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+          assert.equal(result.version, 1);
+          assert.equal(result.engine, 'markitdown');
+          assert.equal(result.packageVersion, '0.1.9');
+          assert.equal(result.pages.length, 2);
+          assert.match(result.pages[0], /PAGE ONE/);
+          assert.match(result.pages[0], /December 1, 2026 at 5 PM/);
+          assert.match(result.pages[1], /PAGE TWO/);
+          assert.match(result.pages[1], /December 15, 2026 at 2 PM/);
+          assert.doesNotMatch(result.pages[0], /December 15/);
+          console.log('Isolated image converted both PDF pages with their source dates.');
+          NODE

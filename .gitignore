@@ -1,5 +1,8 @@
 # Installed tools and generated artifacts
 node_modules/
+.venv-markitdown/
+__pycache__/
+*.pyc
 .tools/
 output/
 tmp/

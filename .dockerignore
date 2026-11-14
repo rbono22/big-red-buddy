@@ -1,6 +1,7 @@
 **
 !package.json
 !package-lock.json
+!requirements-markitdown.txt
 !server.mjs
 !worker.mjs
 !lib/
@@ -16,6 +17,7 @@
 !scripts/
 !scripts/migrate.mjs
 !scripts/ocr-image.swift
+!scripts/markitdown_extract.py
 !deploy/
 !deploy/container-entrypoint.sh
 !deploy/database-url.mjs

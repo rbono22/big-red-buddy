@@ -6,7 +6,7 @@
 
 Academics now searches the public Cornell Tech course planner snapshots for FA26 and SP27. A student chooses an exact section and explicitly approves its published meeting schedule with one import action. Supported occurrences are stored in that student's workspace and, if Google Calendar is connected, a durable job syncs only those selected meetings. Repeated imports reuse event IDs and matching syllabus class records. This does not enroll students or verify their eligibility. Import is additive: adding a different section does not remove an earlier selection.
 
-The source snapshot dates are visible. This is not live roster monitoring; a fresh fetch of the JSON does not make its underlying schedule current. Verified term/session boundaries and no-class dates are applied; unsupported sessions, tentative or missing times, conflicting source evidence, and unsupported exceptions block automatic import. Unpublished rooms remain blank with warnings. Upload a syllabus separately for assignments and exams. Enrollment PDFs and JPEG/PNG photos can be uploaded in Academics or sent to the linked Telegram bot. Set the term with `/enrollment FA26` or `/enrollment SP27`, attach the document, then confirm only your enrolled sections using the numbered review. Matches start unchecked; catalog matching cannot establish enrollment status from icons. Reviews expire after 24 hours. Syllabus PDFs for assignment extraction still use the website upload. Local OCR prefers Tesseract (installed on the pilot Mac and included in the Linux image), with an Apple Vision fallback on macOS; PDF processing requires Poppler. Uploads are limited to 12 MB, 6 PDF pages, and 4 OCR pages.
+The source snapshot dates are visible. This is not live roster monitoring; a fresh fetch of the JSON does not make its underlying schedule current. Verified term/session boundaries and no-class dates are applied; unsupported sessions, tentative or missing times, conflicting source evidence, and unsupported exceptions block automatic import. Unpublished rooms remain blank with warnings. Upload a syllabus separately for assignments and exams. Enrollment PDFs and JPEG/PNG photos can be uploaded in Academics or sent to the linked Telegram bot. Set the term with `/enrollment FA26` or `/enrollment SP27`, attach the document, then confirm only your enrolled sections using the numbered review. Matches start unchecked; catalog matching cannot establish enrollment status from icons. Reviews expire after 24 hours. Syllabus PDFs and photos work through the website or Telegram. The shared local reader uses Microsoft MarkItDown for PDF text, with Poppler fallback and local OCR for photos and scanned pages. Uploads are limited to 12 MB, 6 PDF pages, and 4 OCR pages; see setup and format limits below.
 
 The local investigation report is recorded in `output/course-planner-analysis.json` (generated artifacts are excluded from this repository). Public JavaScript was inspected as inert text; the third-party server implementation and subscription service were not tested. The BRB adapter uses public structured schedule facts and independently written import logic.
 
@@ -17,10 +17,13 @@ A student-owned workspace for syllabus planning, Product Studio announcements, c
 
 ## Run the application
 
-Requirements: Node 24+, PostgreSQL, Poppler (`pdftotext`), and a private Ollama server. Use the pinned dependencies in `package-lock.json`.
+Requirements: Node 24+, PostgreSQL, Python >=3.11.5,<3.15 for the audited MarkItDown dependency set, Poppler (`pdfinfo`, `pdftotext`, `pdfimages`, `pdftoppm`), local Tesseract OCR, and a private Ollama server. Apple Vision is the OCR fallback on macOS. Use the dependencies in `package-lock.json` and `requirements-markitdown.txt`. The Docker runtime uses Node 24 trixie-slim with Python 3.13; update older `NODE_IMAGE` overrides as described in [deployment instructions](deploy/PILOT.md).
 
 ```sh
 npm ci
+python3 -m venv .venv-markitdown
+.venv-markitdown/bin/python -m pip install -r requirements-markitdown.txt
+.venv-markitdown/bin/python -I scripts/markitdown_extract.py --check
 npm start
 ```
 
@@ -39,6 +42,16 @@ The supplied local `.env`, when present, is private and ignored. It contains a p
 ```
 
 For a fresh checkout, start from `.env.example`. Production startup requires HTTPS, Google credentials, explicit enrollment policy, strong secrets, PostgreSQL, and a private model address; development identities are forbidden. The optional SQLite adapter is only for local tests/development, and production never silently falls back to it. [Pilot deployment instructions](deploy/PILOT.md) cover the always-on Linux deployment, secrets, backups, monitoring, and restore procedure.
+
+### Local PDF and photo processing
+
+[Microsoft MarkItDown](https://github.com/microsoft/markitdown) is integrated into the shared document reader used by web and Telegram resumes, syllabi, enrollment documents, invitation screenshots, and Telegram upload suggestions. PDF pages use its local PDF converter; searchable text is combined with local OCR when a page also contains a substantial scan. Page boundaries remain available for source evidence. JPEG/PNG photos and scanned PDF pages continue through Tesseract or Apple Vision because MarkItDown's default image metadata conversion is not text recognition. No image-captioning service, cloud document service, or third-party plugin is enabled. This does not enable Gmail attachment reading.
+
+Accepted formats remain PDF, JPEG, and PNG; resume uploads require PDF so the original can be attached to applications. Convert HEIC and other unsupported images to JPEG/PNG first. Limits remain 12 MB per file, six PDF pages, at most four pages needing OCR, 24-megapixel images with a maximum side of 12,000 pixels, and bounded extracted text. Password-protected PDFs are rejected. MarkItDown does not remove these limits or make every photograph readable.
+
+The default Python path is `.venv-markitdown/bin/python` in this checkout. `MARKITDOWN_PYTHON` can select another absolute Python path. Docker installs the same requirements at `/opt/brb-markitdown` and checks the converter as its nonroot runtime user. CI requires the converter, exercises synthetic searchable/scanned/mixed-content fixtures, and converts a synthetic PDF inside the image with a read-only filesystem and no network. A separately installed, pinned `pip-audit` audits the exact resolved Python dependencies in both the test environment and runtime image, including transitive packages. `node scripts/check-deployment.mjs --require-markitdown` verifies the host's pinned converter without reading a student document. Without that flag, deployment validation reports host availability separately from Docker packaging.
+
+If MarkItDown is missing, disabled, or fails within its time budget, the reader falls back to local Poppler extraction; scan OCR remains available. Set `MARKITDOWN_ENABLED=false` for a Poppler-only recovery, then restart the model worker. Conversion uses validated local uploads, isolated Python, private temporary files, restricted subprocess environment variables, and the existing extraction deadline. Uploaded links are not fetched by the converter. Syllabus and event candidates still require their normal review; installing the parser does not approve dates or submit applications.
 
 ## What each student does
 
@@ -135,7 +148,7 @@ Career Studio separates **Find jobs**, **Saved**, **Applications**, and **Resume
 
 Career Studio accepts a resume PDF, asks the private model for suggested edits and source-backed contact facts, and keeps those suggestions separate from the student-entered application profile. Work authorization, sponsorship, veteran status, and availability must be explicitly supplied by the student. These saved declarations are not passed to the drafting model. Custom questions support either a guided AI draft or a student-written answer; only reviewed answers enter the downloadable application packet.
 
-Resume PDFs use the same bounded local text/OCR reader as academic uploads: at most 12 MB, 6 pages, and 4 pages needing OCR. PDF image inspection runs once per document, and Tesseract processes at most two pages concurrently with one CPU thread per process. Apple Vision remains sequential. Any failed page cancels and joins the remaining work before private temporary files are removed.
+Resume PDFs use the same bounded MarkItDown/Poppler and local OCR reader as academic uploads: at most 12 MB, 6 pages, and 4 pages needing OCR. The uploaded original remains the application attachment unless the student selects a separately enhanced resume. PDF image inspection runs once per document, and Tesseract processes at most two pages concurrently with one CPU thread per process. Apple Vision remains sequential. Any failed OCR page cancels and joins the remaining work before private temporary files are removed.
 
 **Review your resume** uses the supplied **2026–2027 JCT MBA resume template**, captured in `resources/jct-mba-resume-template.json` with its source hash and explicit/observed rule provenance. The reference shows Calibri 12 pt, US Letter, centered bold headings, and Education → optional Technical Proficiency → Professional Experience → Projects → Additional Information. The file's font/margin settings and stored one-page metadata are observations, not asserted current Cornell mandates. The Quick Look preview was not a faithful Word render; the resource records that limitation and does not claim a verified rendered page count.
 

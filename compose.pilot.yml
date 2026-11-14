@@ -5,7 +5,7 @@ x-app: &app
   build:
     context: .
     args:
-      NODE_IMAGE: ${NODE_IMAGE:-node:24-bookworm-slim}
+      NODE_IMAGE: ${NODE_IMAGE:-node:24-trixie-slim}
   user: "1000:1000"
   read_only: true
   tmpfs:

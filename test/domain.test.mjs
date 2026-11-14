@@ -15,6 +15,16 @@ test('New York times respect the fall DST transition and invalid dates are rejec
   assert.throws(() => localISO('2026-03-08', '02:30'));
 });
 const syllabusFixture = process.env.SYLLABUS_PDF_PATH || path.join(homedir(), 'Downloads', 'NBAY 5300 CT Syllabus_Fall2026.pdf');
+test('NBAY schedule accepts Markdown table rows without losing paper assignments', () => {
+  const text='NBAY 5300 Fall 2026 1:25-2:40 pm\fWeekly Schedule of Topics\n| Week | Class | Date | Topic | Due |\n| --- | --- | --- | --- | --- |\n| 3 | 5 | 10/28/2026 | Venture deals | 1 |\n| 5 | 8 | 11/9/2026 | Valuation | 2 |\n| 6 | 10 | 11/16/2026 | Funding | 3 |\n| 7 | | 11/25/2026 | Thanksgiving Break | |';
+  const events=parseNBAY(text);
+  assert.deepEqual(events.filter(e=>e.kind==='assignment').map(e=>[e.title,e.date]),[
+    ['NBAY 5300 · Problem set 1','2026-10-28'],['NBAY 5300 · Problem set 2','2026-11-09'],['NBAY 5300 · Problem set 3','2026-11-16']
+  ]);
+  assert.deepEqual(events.filter(e=>e.kind==='class').map(e=>e.title),['NBAY 5300 · Venture deals','NBAY 5300 · Valuation','NBAY 5300 · Funding']);
+  assert.match(events[0].evidence,/\| Venture deals \| 1 \|/);
+  assert.equal(events.some(e=>e.date==='2026-11-25'),false);
+});
 test('Supplied syllabus yields exact class dates, three paper problem sets, a quiz, and the separate exam time', {skip:!existsSync(syllabusFixture)}, async () => {
   const text = await pdfText(syllabusFixture);
   const events = parseNBAY(text);

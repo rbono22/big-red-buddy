@@ -54,6 +54,8 @@ Edit `deploy/pilot.env` with the real domain, OAuth client ID, invited emails, m
 
 Resolve current, patched image digests with `docker buildx imagetools inspect IMAGE:TAG`, review them, then put the complete `name:tag@sha256:…` references in `NODE_IMAGE`, `CADDY_IMAGE`, and `POSTGRES_IMAGE`. This is mandatory in the production check. Keep these digests updated through tested releases. Build on the target architecture.
 
+For `NODE_IMAGE`, use an official Node 24 **trixie-slim** tag and its tested digest, for example `node:24-trixie-slim@sha256:…`. Replace any earlier bookworm-slim override when upgrading. Trixie supplies Python 3.13; the pinned MarkItDown dependency set requires Python >=3.11.5,<3.15 and deliberately excludes older vulnerable dependency resolutions. The image build checks this version range before installation and verifies the converter as the nonroot runtime user. CI audits the exact installed Python packages and converts a synthetic PDF with the image's network disabled and filesystem read-only.
+
 ```sh
 node scripts/check-deployment.mjs --production
 docker compose --env-file deploy/pilot.env -f compose.pilot.yml build

@@ -11,7 +11,7 @@ import {spawnSync} from 'node:child_process';
 test('deployment validation rejects domain widening and pilot bypasses without modifying the allowlist',async t=>{
  const repo=path.resolve(import.meta.dirname,'..'),dir=await mkdtemp(path.join(tmpdir(),'brf-deployment-policy-'));
  t.after(()=>rm(dir,{recursive:true,force:true}));
- const names=['scripts/check-deployment.mjs','lib/security.mjs','compose.pilot.yml','Dockerfile','.dockerignore','deploy/Caddyfile','deploy/pilot.env.example'];
+ const names=['scripts/check-deployment.mjs','lib/security.mjs','compose.pilot.yml','Dockerfile','.dockerignore','requirements-markitdown.txt','deploy/Caddyfile','deploy/pilot.env.example'];
  for(const name of names){await mkdir(path.dirname(path.join(dir,name)),{recursive:true});await writeFile(path.join(dir,name),await readFile(path.join(repo,name)));}
  const configPath=path.join(dir,'deploy/pilot.env.example'),composePath=path.join(dir,'compose.pilot.yml');
  const originalConfig=(await readFile(configPath,'utf8')).replace(/^PILOT_EMAILS=.*$/m,'PILOT_EMAILS=one@cornell.edu,two@cornell.edu,three@cornell.edu,four@cornell.edu,five@cornell.edu'),originalCompose=await readFile(composePath,'utf8');
@@ -22,4 +22,16 @@ test('deployment validation rejects domain widening and pilot bypasses without m
  await writeFile(configPath,originalConfig+'\nALLOW_ALL_CORNELL=true\n');result=run();assert.equal(result.status,1);assert.match(result.stderr,/preserves the invited pilot/);
  await writeFile(configPath,originalConfig);await writeFile(composePath,originalCompose.replace('ALLOWED_GOOGLE_DOMAINS: cornell.edu','ALLOWED_GOOGLE_DOMAINS: ${ALLOWED_GOOGLE_DOMAINS:-cornell.edu}'));result=run();assert.equal(result.status,1);assert.match(result.stderr,/domain is fixed to cornell\.edu/);
  await writeFile(composePath,originalCompose.replace('PILOT_EMAILS: ${PILOT_EMAILS:?Set the pilot email allowlist}','PILOT_EMAILS: ${PILOT_EMAILS:-}'));result=run();assert.equal(result.status,1);assert.match(result.stderr,/requires an explicit pilot allowlist/);assert.equal(await readFile(configPath,'utf8'),originalConfig);
+});
+
+test('deployment validation distinguishes optional host fallback from required and packaged converters',async t=>{
+ const repo=path.resolve(import.meta.dirname,'..'),dir=await mkdtemp(path.join(tmpdir(),'brf-converter-deployment-'));
+ t.after(()=>rm(dir,{recursive:true,force:true}));
+ for(const name of ['scripts/check-deployment.mjs','lib/security.mjs','compose.pilot.yml','Dockerfile','.dockerignore','requirements-markitdown.txt','deploy/Caddyfile','deploy/pilot.env.example']){await mkdir(path.dirname(path.join(dir,name)),{recursive:true});await writeFile(path.join(dir,name),await readFile(path.join(repo,name)));}
+ const run=(args=[])=>spawnSync(process.execPath,[path.join(dir,'scripts/check-deployment.mjs'),...args],{cwd:dir,env:{PATH:'',LANG:'en_US.UTF-8'},encoding:'utf8',timeout:10000});
+ let result=run();assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/Host MarkItDown is unavailable/);assert.match(result.stdout,/converter dependencies are pinned/);
+ result=run(['--require-markitdown']);assert.equal(result.status,1);assert.match(result.stderr,/Pinned local MarkItDown converter is available/);
+ const ignore=path.join(dir,'.dockerignore'),originalIgnore=await readFile(ignore,'utf8');await writeFile(ignore,originalIgnore.replace('!scripts/markitdown_extract.py',''));result=run();assert.equal(result.status,1);assert.match(result.stderr,/bridge and requirements are explicitly packaged/);
+ await writeFile(ignore,originalIgnore);const requirements=path.join(dir,'requirements-markitdown.txt'),originalRequirements=await readFile(requirements,'utf8');await writeFile(requirements,originalRequirements.replace(/markitdown\[pdf\]==[\d.]+/,'markitdown[pdf]'));result=run();assert.equal(result.status,1);assert.match(result.stderr,/converter dependencies are pinned/);
+ await writeFile(requirements,originalRequirements);const configPath=path.join(dir,'deploy/pilot.env.example'),originalConfig=await readFile(configPath,'utf8');await writeFile(configPath,originalConfig.replace(/^NODE_IMAGE=.*$/m,'NODE_IMAGE=node:24-bookworm-slim'));result=run();assert.equal(result.status,1);assert.match(result.stderr,/trixie-slim for supported Python/);
 });

@@ -24,6 +24,12 @@ const dockerfile = source('Dockerfile');
 check(dockerfile.includes('USER node'), 'Application image runs as nonroot');
 check(!dockerfile.includes('COPY . '), 'Image copies an explicit application allowlist');
 check(source('.dockerignore').startsWith('**\n'), 'Build context denies private files by default');
+const converterRequirements = source('requirements-markitdown.txt');
+const converterVersion = converterRequirements.match(/^markitdown\[pdf\]==([\d.]+)\s*$/m)?.[1];
+check(!!converterVersion && /^pypdf==[\d.]+\s*$/m.test(converterRequirements), 'Local PDF converter dependencies are pinned');
+check(['requirements-markitdown.txt', 'scripts/markitdown_extract.py'].every(name => dockerfile.includes(name) && source('.dockerignore').includes(`!${name}`)), 'Local PDF converter bridge and requirements are explicitly packaged');
+check(dockerfile.includes('MARKITDOWN_PYTHON=/opt/brb-markitdown/bin/python') && dockerfile.includes('python3-venv') && dockerfile.includes('pip install --no-cache-dir -r requirements-markitdown.txt'), 'Application image installs the isolated local PDF converter');
+check(/^(?:docker\.io\/library\/)?node:24(?:\.\d+){0,2}-trixie-slim(?:@sha256:[a-f0-9]{64})?$/.test(config.NODE_IMAGE || 'node:24-trixie-slim'), 'Node runtime image uses trixie-slim for supported Python conversion dependencies');
 check(composeSource.includes('internal: true'), 'Database network is internal');
 check(['model','reminders','discovery'].every(role=>composeSource.includes(`WORKER_ROLE: ${role}`)), 'Model, reminders and job discovery run in separate processes');
 for(const name of ['job-source-catalog.json','jct-mba-resume-template.json','academic-calendar-2026-2027.json'])check(dockerfile.includes(`resources/${name}`)&&source('.dockerignore').includes(`!resources/${name}`), `${name} is explicitly packaged for runtime`);
@@ -42,6 +48,24 @@ let origin;
 try { origin = new URL(config.APP_ORIGIN); } catch {}
 check(origin?.protocol === 'https:' && origin?.host === config.APP_DOMAIN && origin?.pathname === '/', 'HTTPS origin matches the proxy hostname');
 for(const name of ['WORKER_CONCURRENCY','REMINDER_CONCURRENCY','DISCOVERY_CONCURRENCY']){const value=Number(config[name]??(name==='REMINDER_CONCURRENCY'?2:1));check(Number.isInteger(value)&&value>=1&&value<=16,`${name} is bounded`);}
+
+// Host availability is optional: a Docker deployment installs its own converter.
+// CI and local operators can explicitly require the host's Python environment.
+const converterPython = process.env.MARKITDOWN_PYTHON || path.join(root, '.venv-markitdown', 'bin', 'python');
+let converterAvailable = false;
+if (String(process.env.MARKITDOWN_ENABLED || 'true').toLowerCase() !== 'false' && path.isAbsolute(converterPython) && existsSync(converterPython)) {
+  const result = spawnSync(converterPython, ['-I', path.join(root, 'scripts/markitdown_extract.py'), '--check'], {
+    cwd: root, encoding: 'utf8', timeout: 15000, maxBuffer: 64 * 1024,
+    env: { PATH: process.env.PATH || '/usr/bin:/bin', LANG: 'en_US.UTF-8' },
+  });
+  try {
+    const status = JSON.parse(result.stdout);
+    converterAvailable = result.status === 0 && status.version === 1 && status.available === true && status.engine === 'markitdown' && status.packageVersion === converterVersion;
+  } catch {}
+}
+if (converterAvailable) check(true, 'Pinned local MarkItDown converter is available');
+else if (args.has('--require-markitdown')) check(false, 'Pinned local MarkItDown converter is available');
+else console.log('Host MarkItDown is unavailable or disabled: PDF uploads use the local Poppler fallback. The container converter is verified during image build.');
 
 if (production) {
   check(!Object.hasOwn(config, 'DEV_AUTH_EMAILS'), 'No development auth configuration');
