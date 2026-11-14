@@ -30,6 +30,7 @@ import {refreshStoredJobMatches,jobMatchingFingerprint} from './lib/job-discover
 import {listCareerJobs,setJobSaved} from './lib/job-saves.mjs';
 import {listApplicationTracker,setApplicationStatus,startApplicationTracking,updateApplicationTracking} from './lib/application-tracker.mjs';
 import {previewCareerCleanup,performCareerCleanup,listVisibleDraftApplications} from './lib/career-cleanup.mjs';
+import {queueResumeEnhancement,getResumeEnhancement,selectResumeEnhancement,downloadResumeEnhancement} from './lib/resume-enhancer.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -268,9 +269,14 @@ async function route(req, res) {
   if (p.startsWith('/auth/')) authLimiter.check(clientIP(req));
   if (p === '/auth/google/start' && req.method === 'GET') {
     const returnTo=url.searchParams.get('returnTo');
+    let returnPath='/';
+    try{
+      const match=typeof returnTo==='string'&&returnTo.match(/^\/#(application-handoff|resume-enhancer)\/(.+)$/);
+      if(match&&/^[A-Za-z0-9:_-]{1,160}$/.test(decodeURIComponent(match[2])))returnPath=`/#${match[1]}/${encodeURIComponent(decodeURIComponent(match[2]))}`;
+    }catch{ /* An invalid return link falls back to the workspace. */ }
     const result = await auth.beginGoogle(req, res, {
       purpose: 'login',
-      returnPath: typeof returnTo==='string'&&/^\/#application-handoff\/[A-Za-z0-9:_-]{1,160}$/.test(returnTo)?returnTo:'/'
+      returnPath
     });
     return redirect(res, result.url);
   }
@@ -471,6 +477,15 @@ async function route(req, res) {
   if(p==='/api/campus/calendars'&&req.method==='GET')return json(res,200,await listCampusCalendars(store));
   if(p==='/api/career/applications'&&req.method==='GET')return json(res,200,await listApplicationTracker(store,{queue}));
   if(p==='/api/career/saved-answers'&&req.method==='GET')return json(res,200,{answers:await listAllSavedAnswers(store)});
+  if(p==='/api/career/resume-enhancement'&&req.method==='GET')return json(res,200,await getResumeEnhancement(store,new URL(req.url,'http://localhost').searchParams.get('jobId'),{queue}));
+  if(p==='/api/career/resume-enhancement/download'&&req.method==='GET'){
+    const query=new URL(req.url,'http://localhost').searchParams;
+    const document=await downloadResumeEnhancement(store,{jobId:query.get('jobId'),enhancementId:query.get('enhancementId')});
+    const filename=String(document.name||'BRB-tailored-resume.pdf').replace(/[^a-zA-Z0-9._ -]/g,'_').slice(0,150);
+    res.setHeader('Content-Type','application/pdf');
+    res.setHeader('Content-Disposition',`attachment; filename="${filename}"`);
+    return res.end(document.buffer);
+  }
   if(p==='/api/career/demographics'&&req.method==='GET')return json(res,200,{...await getDemographics(store),fields:DEMOGRAPHIC_FIELDS});
   if(p==='/api/partiful/calendars'&&req.method==='GET')return json(res,200,await listPartifulCalendars(store));
   if(p==='/api/luma/calendars'&&req.method==='GET')return json(res,200,await listLumaCalendars(store));
@@ -487,6 +502,17 @@ async function route(req, res) {
     return res.end(email.html);
   }
   if (req.method !== 'POST') throw new HttpError(404, 'Endpoint not found.');
+  if(p==='/api/career/resume-enhance'){
+    heavyLimiter.check(user.id);const input=await body(req);
+    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==1||typeof input.jobId!=='string')throw new HttpError(400,'Choose a job for your enhanced résumé.');
+    try{return json(res,202,await queueResumeEnhancement(store,queue,input));}
+    catch(error){if(['STUDENT_QUEUE_FULL','STUDENT_MODEL_QUEUE_FULL'].includes(error.message))throw new HttpError(429,'Your processing queue is full. Let current tasks finish.');throw error;}
+  }
+  if(p==='/api/career/resume-enhancement/select'){
+    const input=await body(req);
+    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==2||typeof input.jobId!=='string'||!(input.enhancementId===null||typeof input.enhancementId==='string'))throw new HttpError(400,'Choose an enhanced résumé or your original.');
+    return json(res,200,await selectResumeEnhancement(store,input));
+  }
   if(p==='/api/career/cleanup/preview')return json(res,200,await previewCareerCleanup(store,await body(req),{queue}));
   if(p==='/api/career/cleanup/confirm')return json(res,200,await performCareerCleanup(store,await body(req),{queue}));
   if(p==='/api/career/demographics'){
