@@ -29,6 +29,7 @@ import {readJobDiscoverySettings,saveJobDiscoverySettings} from './lib/job-prefe
 import {refreshStoredJobMatches,jobMatchingFingerprint} from './lib/job-discovery.mjs';
 import {listCareerJobs,setJobSaved} from './lib/job-saves.mjs';
 import {listApplicationTracker,setApplicationStatus,startApplicationTracking,updateApplicationTracking} from './lib/application-tracker.mjs';
+import {previewCareerCleanup,performCareerCleanup,listVisibleDraftApplications} from './lib/career-cleanup.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -183,7 +184,7 @@ async function state(store) {
     sources: await store.all('sources'),
     jobs: (await listCareerJobs(store)).map(job=>({...job,telegramApplication:liveApplicationSupported(job)})),
     linkedinConnections:await readLinkedInConnections(store),
-    applications: await store.all('applications'),
+    applications: await listVisibleDraftApplications(store),
     applicationTracker: await listApplicationTracker(store,{queue}),
     careerProfile,
     resumeReview: await store.get('career','resumeReview'),
@@ -486,6 +487,8 @@ async function route(req, res) {
     return res.end(email.html);
   }
   if (req.method !== 'POST') throw new HttpError(404, 'Endpoint not found.');
+  if(p==='/api/career/cleanup/preview')return json(res,200,await previewCareerCleanup(store,await body(req),{queue}));
+  if(p==='/api/career/cleanup/confirm')return json(res,200,await performCareerCleanup(store,await body(req),{queue}));
   if(p==='/api/career/demographics'){
     const input=await body(req);
     if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==2||!Object.hasOwn(input,'values')||!Object.hasOwn(input,'expectedRevision')||typeof input.expectedRevision!=='string'||!/^r\d+\.p\d+$/.test(input.expectedRevision))throw new HttpError(400,'Review your optional choices before saving.');
@@ -973,7 +976,8 @@ async function route(req, res) {
   if (p === '/api/applications/review') {
     const b = await body(req),
       a = await owned(store, 'applications', b.id);
-    await store.put('applications', a.id, {
+    if(a.removedAt)throw new HttpError(409,'This application was removed. Start a new preparation from the job to continue.');
+    if(!await store.compareAndSet('applications', a.id, a, {
       ...a,
       answers: {
         ...a.answers,
@@ -982,7 +986,7 @@ async function route(req, res) {
       },
       status: 'reviewed',
       reviewedAt: nowISO()
-    });
+    }))throw new HttpError(409,'This application changed. Refresh before saving your review.');
     return json(res, 200, {
       ok: true
     });
@@ -990,6 +994,7 @@ async function route(req, res) {
   if (p === '/api/applications/sandbox-submit') {
     const b = await body(req),
       a = await owned(store, 'applications', b.id);
+    if(a.removedAt)throw new HttpError(409,'This application was removed. Start a new preparation from the job to continue.');
     if (a.status !== 'reviewed') throw new HttpError(400, 'Review the application before sandbox submission.');
     const receipt = {
       ...a,
@@ -998,7 +1003,7 @@ async function route(req, res) {
       submittedAt: nowISO(),
       destination: 'LOCAL SANDBOX ONLY — no employer received this application'
     };
-    await store.put('applications', a.id, receipt);
+    if(!await store.compareAndSet('applications', a.id, a, receipt))throw new HttpError(409,'This application changed. Refresh before continuing.');
     return json(res, 200, {
       receipt: receipt.receipt
     });

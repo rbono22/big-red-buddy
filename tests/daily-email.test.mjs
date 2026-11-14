@@ -16,6 +16,19 @@ async function fixture(store=memory()){await store.put('secrets','dailyEmailGoog
 async function scheduled(f){await scheduleDailyEmail(f.store,f.queue,{now:NOW});return f.queue.jobs[0].payload;}
 const options=extra=>({now:NOW,appOrigin:ORIGIN,...extra});
 const email={subject:'BRB · Morning 🌞',text:'Good morning.\nFinance at Tata.',html:'<h1>Good morning.</h1><p>Finance at Tata.</p>'};
+
+test('a found-job removal after email rendering prevents obsolete content from being sent',async()=>{
+ const f=await fixture();await saveNotificationPreferences(f.store,{topics:{school:'off',jobs:'daily'}});
+ await f.store.put('jobs','removed-role',{id:'removed-role',title:'Role to remove',company:'Fixture',publishedAt:new Date(NOW-3600000).toISOString(),status:'discovered'});
+ const payload=await scheduled(f),cas=f.store.compareAndSet.bind(f.store);let changed=false,sends=0;
+ f.store.compareAndSet=async(bucket,id,expected,value)=>{
+  const result=await cas(bucket,id,expected,value);
+  if(result&&bucket==='dailyEmails'&&value.status==='sending'&&!changed){changed=true;await f.store.put('careerRemovals','removed-role',{id:'removed-role',foundRemovedAt:new Date(NOW).toISOString()});}
+  return result;
+ };
+ const result=await dispatchDailyEmail(f.store,payload,options({send:async()=>{sends++;return {id:'must-not-send'};}}));
+ assert.equal(changed,true);assert.equal(sends,0);assert.deepEqual(result,{sent:false,reason:'job-removed'});
+});
 const response=(body,status=200)=>({ok:status<400,status,async json(){return body;}});
 
 // No test connects to Gmail or sends any real message.

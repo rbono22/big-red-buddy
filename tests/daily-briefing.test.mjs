@@ -7,6 +7,7 @@ import {openDatabase,databaseInternals} from '../lib/database.mjs';
 import {createQueue} from '../lib/queue.mjs';
 import {readDailyBriefingSettings,saveDailyBriefingSettings,buildDailyBriefing,scheduleDailyBriefing,dispatchDailyBriefing} from '../lib/daily-briefing.mjs';
 import {saveNotificationPreferences,FRESH_NOTIFICATION_PREFERENCES} from '../lib/notification-preferences.mjs';
+import {sendTelegram} from '../lib/integrations.mjs';
 
 const NOW=Date.parse('2026-11-10T13:05:00Z');
 async function fixture(t,userId='student'){
@@ -14,6 +15,16 @@ async function fixture(t,userId='student'){
   t.after(async()=>{await queue.close();await db.close();await rm(dir,{recursive:true,force:true});});await store.put('secrets','telegram',{chatId:123});return {db,queue,store};
 }
 const event=(id,kind,extra={})=>({id,kind,title:`${kind} ${id}`,status:'approved',date:'2026-11-10',start:'2026-11-10T18:00:00Z',end:'2026-11-10T19:00:00Z',location:'Tata L23',...extra});
+
+test('removed found jobs disappear from briefings and suppress queued Telegram job cards',async t=>{
+ const {store}=await fixture(t);await saveNotificationPreferences(store,{topics:{school:'off',events:'off',jobs:'daily'}});
+ const job={id:'removed-role',title:'Removed product role',company:'Fixture',publishedAt:new Date(NOW-3600000).toISOString(),status:'discovered'};
+ await store.put('jobs',job.id,job);
+ const before=await buildDailyBriefing(store,{now:NOW});assert.equal(before.counts.jobs,1);assert.match(before.text,/Removed product role/);
+ await store.put('careerRemovals',job.id,{id:job.id,foundRemovedAt:new Date(NOW).toISOString()});
+ const after=await buildDailyBriefing(store,{now:NOW});assert.equal(after.counts.jobs,0);assert.doesNotMatch(after.text,/Removed product role/);assert.doesNotMatch(JSON.stringify(after.emailSections),/Removed product role/);
+ assert.deepEqual(await sendTelegram(store,before.text,{notification:{channel:'requested-jobs',requireCurrentPublication:true,jobs:[{id:job.id,publishedAt:job.publishedAt,bucket:'last24Hours'}]}}),{suppressed:true,reason:'job-removed'});
+});
 
 test('briefing content and coverage include only opted-in daily topics, including review items',async t=>{
  const {store}=await fixture(t);await store.put('events','class',event('class','class',{title:'School-only class'}));await store.put('events','school-review',event('school-review','assignment',{title:'School review item',status:'review'}));await store.put('events','event-review',event('event-review','event',{title:'Private event review',status:'review'}));await store.put('events','party',event('party','event',{title:'Private event title'}));await store.put('jobs','role',{id:'role',title:'Private job title',publishedAt:new Date(NOW).toISOString(),firstSeenAt:new Date(NOW).toISOString()});
