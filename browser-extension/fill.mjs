@@ -6,9 +6,13 @@ export async function fillApplication(payload){
  if(payload?.version!==1||location.href!==payload.url||payload.expiresAt<=Date.now()||!Array.isArray(payload.fields)||payload.fields.length>70)return {...result,error:'The employer address changed. Reopen the handoff from BRB.'};
  const standalone=payload.mode==='standalone',scan=standalone?globalThis.__brbApplicationScan:null;
  if(standalone){result.preserved=0;result.alreadySubmitted=payload.alreadySubmitted===true;result.submissionInProgress=payload.submissionInProgress===true;result.resumeNeedsRefresh=payload.resumeNeedsRefresh===true;}
+ if(standalone&&payload.resumeEnhancement)result.resumeEnhancement={fileName:payload.documents?.resume?.name||payload.resumeEnhancement.fileName,noChanges:payload.resumeEnhancement.noChanges===true,attached:false};
  if(standalone&&(!scan||scan.scanId!==payload.scanId||scan.url!==payload.url||typeof scan.read!=='function'))return {...result,error:'This application changed. Click BRB again to scan the current form.'};
  const sameField=(a,b)=>['key','label','type','required','controlId','controlName','options','optionValues','radioIds','checkboxIds','maxLength','multiple','document','accept'].every(key=>JSON.stringify(a[key])===JSON.stringify(b[key]));
  const standaloneEntry=field=>{if(scan?.readTitle?.()!==scan?.title)return null;const current=scan?.read().find(entry=>entry.field.key===field.key);return current&&sameField(current.field,field)?current:null;};
+ const unchangedFileSelection=input=>{const original=scan?.fileSelections?.get(input),current=[...(input.files||[])];return Array.isArray(original)&&original.length===current.length&&original.every((file,index)=>file===current[index]);};
+ const unchangedJobContext=()=>typeof scan?.readJobContext==='function'&&JSON.stringify(scan.readJobContext())===JSON.stringify(scan.jobContext);
+ if(standalone&&payload.resumeEnhancement&&!unchangedJobContext())return {...result,error:'The job details changed while tailoring. Click BRB again on the current role.'};
  const esc=value=>CSS.escape(String(value));
  if(!standalone&&!['lever','greenhouse','ashby','workable'].includes(payload.provider))return {...result,error:'This employer form is not supported.'};
  const root=()=>standalone?document:payload.provider==='workable'?document.querySelector('form[data-ui="application-form"]'):payload.provider==='ashby'?document.querySelector('[data-field-path]')?document:null:document.querySelector('#application-form');
@@ -42,11 +46,12 @@ export async function fillApplication(payload){
  const skip=(field,reason)=>{result.skipped.push({label:field.label,reason});};
  const successful=[],files=payload.fields.filter(f=>f.type==='file'),other=payload.fields.filter(f=>f.type!=='file');
  for(const field of [...files,...other]){
+  const replaceResume=standalone&&!!payload.resumeEnhancement&&field.type==='file'&&field.document==='resume';
   if(location.href!==payload.url||payload.expiresAt<=Date.now())return {...result,error:'The employer page or handoff changed. Reopen it from BRB.'};
   if(standalone){
    const current=controls(field),first=current[0];
    const occupied=field.type==='file'?first?.files?.length:current.some(control=>control.tagName==='BUTTON'?control.getAttribute('aria-pressed')==='true':['radio','checkbox'].includes(control.type)?control.checked:control.tagName==='SELECT'?[...control.selectedOptions].some(option=>!option.disabled&&String(option.value||'')!==''):String(control.value||'').trim()!=='');
-   if(occupied){result.preserved++;continue;}
+   if(occupied&&!replaceResume){result.preserved++;continue;}
   }
   const answer=payload.answers?.[field.key];if(typeof answer?.value!=='string'||!answer.value.trim()){if(field.required)skip(field,'Needs your answer');continue;}
   const inputs=controls(field),input=inputs[0];
@@ -59,10 +64,11 @@ export async function fillApplication(payload){
     const doc=payload.documents?.[field.document];if(!doc||doc.mimeType!=='application/pdf'||doc.name!==answer.value||typeof doc.file!=='string'||doc.file.length>17*1024*1024||input.type!=='file'||input.multiple)throw Error('Document unavailable');
     const bytes=Uint8Array.from(atob(doc.file),c=>c.charCodeAt(0));if(new TextDecoder().decode(bytes.slice(0,5))!=='%PDF-')throw Error('Invalid PDF');
     const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');if(digest!==doc.sha256)throw Error('Document changed');
-    if(standalone&&(!standaloneEntry(field)||location.href!==payload.url||payload.expiresAt<=Date.now()||input.files?.length))throw Error('The employer page changed');
+    if(standalone&&(!standaloneEntry(field)||location.href!==payload.url||payload.expiresAt<=Date.now()||(replaceResume?!unchangedFileSelection(input)||!unchangedJobContext():input.files?.length)))throw Error(replaceResume?'The page, job details or résumé selection changed while tailoring. Click BRB again.':'The employer page changed');
     const transfer=new DataTransfer();transfer.items.add(new File([bytes],doc.name,{type:'application/pdf'}));input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
     if(input.files.length!==1||input.files[0].name!==doc.name||input.files[0].size!==bytes.length)throw Error('Upload not selected');
     await wait(1000);
+    if(replaceResume){if(!input.isConnected||input.files.length!==1||input.files[0].name!==doc.name||input.files[0].size!==bytes.length)throw Error('Confirm the résumé upload on the employer page');result.resumeEnhancement.attached=true;}
    }else if(['text','email','tel','textarea'].includes(field.type)){
     if(!['text','email','tel','search','url','textarea'].includes(input.type)||inputs.length!==1||input.maxLength>0&&answer.value.length>input.maxLength)throw Error('Unsupported input');setValue(input,answer.value);if(input.value!==answer.value)throw Error('Value changed');
    }else if(field.type==='location'){
@@ -101,6 +107,7 @@ export async function fillApplication(payload){
  const heading=document.createElement('strong');heading.textContent=`BRB filled ${result.filled} ${result.filled===1?'field':'fields'}`;banner.append(heading);
  const status=payload.alreadySubmitted?'BRB already records this application as submitted. Check your employer confirmation before submitting again.':payload.submissionInProgress?'An automatic submission is still in progress. Wait for its result before submitting on this page.':result.priorSubmissionUnconfirmed?'A previous submission attempt could not be confirmed and may already have succeeded. Check employer confirmation before submitting again.':'Check your answers and upload status before submitting on this page.';
  const summary=document.createElement('p');summary.textContent=`${result.preserved?`Kept ${result.preserved} existing ${result.preserved===1?'answer':'answers'}. `:''}${result.remaining?`${result.remaining} items need your attention. `:''}${payload.resumeNeedsRefresh?'Your saved résumé has changed; choose the current résumé before submitting. ':''}${status} This helper only filled fields; it did not submit.`;banner.append(summary);
+ if(result.resumeEnhancement){const notice=document.createElement('p'),resume=result.resumeEnhancement;notice.textContent=resume.attached?`${resume.fileName} attached. ${resume.noChanges?'No supported wording changes were needed; this PDF uses your current saved résumé.':'Tailored to this role using your saved experience.'}`:`${resume.fileName} was prepared but could not be attached. Check the résumé upload field and try again.`;banner.append(notice);}
  if(result.skipped.length){const list=document.createElement('ul');for(const item of result.skipped.slice(0,8)){const row=document.createElement('li');row.textContent=normalize(item.label)+(item.reason==='Needs your answer'?'':`: ${item.reason}`);list.append(row);}banner.append(list);}
  const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='Close';dismiss.onclick=()=>banner.remove();banner.append(dismiss);document.body.append(banner);return result;
 }

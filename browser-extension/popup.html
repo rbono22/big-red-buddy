@@ -1,11 +1,13 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Big Red Buddy</title><link rel="stylesheet" href="popup.css"></head><body>
-<header><span class="brand" aria-hidden="true">BRB</span><div><strong>Big Red Buddy</strong><span class="version">Application Helper · 0.2.0</span></div></header>
-<h1 id="heading">Fill your application</h1>
-<p id="description">Use your saved BRB profile, résumé, and matching answers on the application you have open.</p>
-<button id="fill" disabled>Checking this page…</button>
+<header><span class="brand" aria-hidden="true">BRB</span><div><strong>Big Red Buddy</strong><span class="version">Application Helper · 0.3.0</span></div></header>
+<h1 id="heading">Make this application yours</h1>
+<p id="description">Tailor your latest saved résumé to the role and attach a company-named PDF, or fill with your saved documents.</p>
+<section id="job-context" hidden aria-labelledby="context-heading"><h2 id="context-heading">Add the role details</h2><p>This page does not include enough job information. Paste the description from the posting.</p><label for="job-company">Company</label><input id="job-company" maxlength="160" autocomplete="off"><label for="job-title">Job title</label><input id="job-title" maxlength="240" autocomplete="off"><label for="job-description">Job description</label><textarea id="job-description" rows="5" minlength="80" maxlength="20000"></textarea></section>
+<button id="tailor" disabled>Tailor résumé &amp; autofill</button>
+<button id="fill" class="secondary" disabled>Checking this page…</button>
 <p id="status" role="status" aria-live="polite">Checking this page…</p>
 <button id="signin" class="secondary" hidden>Sign in to BRB</button>
-<p class="footnote">Existing answers stay in place. You finish any remaining questions and submit on the employer’s site.</p>
+<p class="footnote">Tailoring preserves your job titles and factual experience. It replaces the résumé attachment with <strong>Resume_Company.pdf</strong>; other answers stay in place. You finish and submit on the employer’s site.</p>
 <a href="https://app.bigredbuddy.com/#career-profile" target="_blank" rel="noreferrer">Manage résumé &amp; saved answers ↗</a>
 <script src="popup.js"></script></body></html>

@@ -10,6 +10,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {randomBytes} from 'node:crypto';
 import {openDatabase} from '../lib/database.mjs';
 import {saveCareerProfile} from '../lib/career.mjs';
+import {executeStandaloneResumeEnhancement} from '../lib/standalone-resume-enhancer.mjs';
 
 test('standalone autofill API requires session and CSRF, isolates students and works without Telegram or an application',{timeout:30000},async t=>{
  const reserve=http.createServer();await new Promise(resolve=>reserve.listen(0,'127.0.0.1',resolve));
@@ -42,4 +43,24 @@ test('standalone autofill API requires session and CSRF, isolates students and w
  assert.doesNotMatch(JSON.stringify(data),/PRIVATE_WORKSPACE_NOTE|SYNTHETIC_PRIVATE_RESUME_TEXT|2125550123/);
  const other=await(await request({student:bob})).json();assert.equal(other.autofill.answers.name.value,'Synthetic Bob');assert.equal(other.autofill.answers.email.value,'bob@example.edu');assert.deepEqual(other.autofill.documents,{});assert.doesNotMatch(JSON.stringify(other),/Synthetic Alice|Alice resume/);
  for(const store of [a,b]){assert.equal(await store.get('secrets','telegram'),null);assert.deepEqual(await store.all('liveApplications'),[]);assert.deepEqual(await store.all('jobs'),[]);assert.deepEqual(await store.all('applicationHandoffs'),[]);}
+ const context={url:scan.url,title:'Business Analyst',company:'Example Co',description:'Use SQL dashboards and data visualization to understand customer retention and make clear recommendations for the business.'};
+ const enhance=({student=alice,csrf=student?.csrfToken,source=origin,value=context}={})=>fetch(endpoint+'/enhance',{method:'POST',headers:{Origin:source,...(student?{Cookie:student.cookie}:{}),'Content-Type':'application/json',...(csrf?{'X-CSRF-Token':csrf}:{})},body:JSON.stringify(value)});
+ assert.equal((await enhance({student:null})).status,401);assert.equal((await enhance({csrf:null})).status,403);assert.equal((await enhance({source:'https://untrusted.example.com'})).status,403);
+ assert.equal((await enhance({value:{...context,userId:bob.user.id}})).status,400);
+ const original={name:'Current.pdf',file:Buffer.from('%PDF-1.7\nsynthetic current resume').toString('base64'),text:'Alex Example\nEXPERIENCE\nBusiness Analyst | Example Co | 2024-2026\n• Built SQL dashboards to measure customer retention.'};
+ await a.put('documents','resume',original);
+ const started=await enhance();assert.equal(started.status,202);const pending=(await started.json()).enhancement;assert.equal(pending.status,'queued');assert.ok(pending.taskId);
+ const status=id=>fetch(endpoint+'/enhancement?id='+encodeURIComponent(id),{headers:{Cookie:alice.cookie}});
+ assert.equal((await fetch(endpoint+'/enhancement?id='+pending.id,{headers:{Cookie:bob.cookie}})).status,404);
+ assert.equal((await request({value:{...scan,resumeEnhancementId:pending.id}})).status,409,'unfinished PDFs are not exported');
+ await executeStandaloneResumeEnhancement(database,{userId:alice.user.id,payload:{enhancementId:pending.id}},{generate:async()=>({value:{changes:[]}}),renderPDF:async()=>({name:'Generated.pdf',file:Buffer.from('%PDF-1.7\nsynthetic company resume').toString('base64')})});
+ const ready=await(await status(pending.id)).json();assert.equal(ready.enhancement.status,'ready');assert.equal(ready.enhancement.fileName,'Resume_Example Co.pdf');assert.equal(ready.enhancement.noChanges,true);assert.doesNotMatch(JSON.stringify(ready),/base64|sourceHash|Built SQL|synthetic company resume/);
+ const tailoredResponse=await request({value:{...scan,resumeEnhancementId:pending.id}});assert.equal(tailoredResponse.status,200);const tailored=(await tailoredResponse.json()).autofill;
+ assert.equal(tailored.documents.resume.name,'Resume_Example Co.pdf');assert.equal(tailored.answers.resume.value,'Resume_Example Co.pdf');assert.equal(tailored.resumeEnhancement.noChanges,true);assert.notEqual(tailored.documents.resume.file,original.file);
+ assert.equal((await request({student:bob,value:{...scan,resumeEnhancementId:pending.id}})).status,404);
+ assert.equal((await request({value:{...scan,url:'https://careers.example.com/application/different',resumeEnhancementId:pending.id}})).status,409);
+ await a.put('documents','resume',{...original,updatedAt:'new version'});
+ assert.equal((await request({value:{...scan,resumeEnhancementId:pending.id}})).status,409,'a source update requires a fresh enhancement');
+ assert.equal((await(await status(pending.id)).json()).enhancement.status,'stale');
+ assert.equal((await a.all('liveApplications')).length,0);assert.equal((await a.all('jobs')).length,0);
 });

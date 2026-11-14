@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Big Red Buddy - Application Helper",
-  "version": "0.2.0",
-  "description": "Autofill job applications with your saved BRB profile, r\u00e9sum\u00e9, and answers. Start on an employer page, in BRB, or from Telegram.",
+  "version": "0.3.0",
+  "description": "Tailor your r\u00e9sum\u00e9 and autofill applications from employer pages, BRB, or Telegram.",
   "permissions": [
     "activeTab",
     "scripting"

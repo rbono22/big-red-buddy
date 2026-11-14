@@ -2,6 +2,7 @@ import {liveApplicationSupported} from './lib/application-providers.mjs';
 import {startLiveApplication} from './lib/live-applications.mjs';
 import {createApplicationHandoff,redeemApplicationHandoff} from './lib/application-handoff.mjs';
 import {prepareStandaloneAutofill} from './lib/application-autofill.mjs';
+import {queueStandaloneResumeEnhancement,getStandaloneResumeEnhancement} from './lib/standalone-resume-enhancer.mjs';
 import {listApplicationAnswerMemory,deleteApplicationAnswerMemory,listAllSavedAnswers,deleteAnySavedAnswer} from './lib/application-answer-memory.mjs';
 import {personalCalendarStatus,savePersonalCalendars} from './lib/personal-calendar.mjs';
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';
@@ -482,6 +483,7 @@ async function route(req, res) {
   if(p==='/api/career/applications'&&req.method==='GET')return json(res,200,await listApplicationTracker(store,{queue}));
   if(p==='/api/career/saved-answers'&&req.method==='GET')return json(res,200,{answers:await listAllSavedAnswers(store)});
   if(p==='/api/career/resume-enhancement'&&req.method==='GET')return json(res,200,await getResumeEnhancement(store,new URL(req.url,'http://localhost').searchParams.get('jobId'),{queue}));
+  if(p==='/api/career/application-autofill/enhancement'&&req.method==='GET')return json(res,200,{enhancement:await getStandaloneResumeEnhancement(store,new URL(req.url,'http://localhost').searchParams.get('id'),{queue})});
   if(p==='/api/career/resume-enhancement/download'&&req.method==='GET'){
     const query=new URL(req.url,'http://localhost').searchParams;
     const document=await downloadResumeEnhancement(store,{jobId:query.get('jobId'),enhancementId:query.get('enhancementId')});
@@ -507,6 +509,10 @@ async function route(req, res) {
     return res.end(email.html);
   }
   if (req.method !== 'POST') throw new HttpError(404, 'Endpoint not found.');
+  if(p==='/api/career/application-autofill/enhance'){
+    heavyLimiter.check(user.id);
+    return json(res,202,{enhancement:await queueStandaloneResumeEnhancement(store,queue,await body(req))});
+  }
   if(p==='/api/career/application-autofill'){
     autofillLimiter.check(user.id);
     return json(res,200,{autofill:await prepareStandaloneAutofill(store,await body(req))});

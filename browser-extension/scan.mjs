@@ -58,6 +58,7 @@ export function scanApplication(){
   return entries;
  };
  const entries=read(),fields=entries.map(entry=>entry.field);
+ const fileSelections=new WeakMap();for(const entry of entries)if(entry.field.type==='file')for(const control of entry.controls)fileSelections.set(control,[...control.files||[]]);
  const readTitle=()=>normalize(document.querySelector('[data-ui="job-title"],.posting-header h2,h1')?.textContent||document.title).slice(0,240)||'Job application';
  const title=readTitle();
  const context=normalize([document.title,...[...document.querySelectorAll('h1,h2,form[aria-label]')].slice(0,12).map(e=>e.getAttribute('aria-label')||e.textContent)].join(' '));
@@ -65,6 +66,51 @@ export function scanApplication(){
  const application=fields.some(f=>f.type==='file'&&f.document==='resume')||identity>=2&&/\b(?:apply|application|career|job|candidate|employment|recruit)/i.test(context)||fields.some(f=>/\b(?:work authorization|sponsorship|employment|resume|résumé|cv)\b/i.test(f.label))&&identity>=1;
  if(!fields.length||!application)return {ok:false,error:document.querySelector('iframe')?'Open the application form in its own tab, then click BRB again.':'I could not identify a job application on this page. Open the application form and try again.'};
  const scanId=[...crypto.getRandomValues(new Uint8Array(16))].map(n=>n.toString(16).padStart(2,'0')).join('');
- globalThis.__brbApplicationScan={scanId,url:location.href,title,read,readTitle,fields};
- return {ok:true,url:location.href,title,company:'',scanId,fields};
+ // Read only public job-description containers or JobPosting metadata. Never
+ // collect application answers, arbitrary body text, or unbounded scripts.
+ const readJobContext=()=>{
+ const publicText=(node,max=20000)=>{
+  if(!node||node.matches?.('input,textarea,select,[contenteditable],form'))return '';
+  const children=[...node.querySelectorAll('*')];if(children.length>2500)return '';
+  const copy=node.cloneNode(true),copies=[...copy.querySelectorAll('*')];
+  for(const [index,element] of children.entries()){const style=element.isConnected?getComputedStyle(element):element.style;if(style?.display==='none'||style?.visibility==='hidden')copies[index].remove();}
+  for(const child of copy.querySelectorAll('script,style,noscript,form,input,textarea,select,button,[contenteditable],[hidden],[aria-hidden="true"],[inert],#brb-application-helper'))child.remove();
+  return normalize(copy.textContent).slice(0,max);
+ };
+ const htmlText=value=>{
+  if(typeof value!=='string'||value.length>50000)return '';
+  const template=document.createElement('template');template.innerHTML=value;
+  return publicText(template.content);
+ };
+ const candidates=[];let visited=0;
+ const visit=(node,depth=0)=>{
+  if(!node||typeof node!=='object'||depth>7||++visited>150)return;
+  if(Array.isArray(node)){for(const item of node.slice(0,30))visit(item,depth+1);return;}
+  if(node['@type']==='JobPosting'||Array.isArray(node['@type'])&&node['@type'].includes('JobPosting'))candidates.push(node);
+  if(node['@graph'])visit(node['@graph'],depth+1);
+ };
+ for(const script of [...document.querySelectorAll('script[type="application/ld+json"]')].slice(0,10)){
+  const value=script.textContent||'';if(value.length>50000)continue;
+  try{visit(JSON.parse(value));}catch{}
+ }
+ let jobTitle='',company='',description='';
+ if(candidates.length===1){const job=candidates[0];jobTitle=typeof job.title==='string'?normalize(job.title).slice(0,240):'';company=typeof job.hiringOrganization?.name==='string'?normalize(job.hiringOrganization.name).slice(0,160):'';description=htmlText(job.description);}
+ if(!description){
+  const selector='[itemprop="description"],[data-ui="job-description"],[data-testid="job-description"],.ashby-job-posting-description,.posting-page .section-wrapper,#job-description,.job-description,.job__description'+(location.hostname==='job-boards.greenhouse.io'?',#content':'');
+  const parts=[];for(const node of [...document.querySelectorAll(selector)].slice(0,12)){
+   if(node.closest('form,[hidden],[aria-hidden="true"],[inert]')||getComputedStyle(node).display==='none'||getComputedStyle(node).visibility==='hidden'||!node.getClientRects().length)continue;
+   const value=publicText(node);if(value&&!parts.some(part=>part.includes(value)))parts.push(value);
+  }
+  description=parts.join(' ').slice(0,20000);
+ }
+ if(!company){
+  const companyNode=document.querySelector('[itemprop="hiringOrganization"] [itemprop="name"],[data-ui="company-name"],[data-testid="company-name"],.company-name');
+  company=publicText(companyNode,160);
+  if(!company&&location.hostname==='jobs.lever.co')company=normalize(document.querySelector('.main-header-logo img,.main-header-logo')?.getAttribute('alt')||document.querySelector('.main-header-logo img')?.getAttribute('alt')).replace(/\s+logo$/i,'').slice(0,160);
+ }
+ return {title:jobTitle||readTitle(),company,description};
+ };
+ const jobContext=readJobContext();
+ globalThis.__brbApplicationScan={scanId,url:location.href,title,read,readTitle,fields,fileSelections,jobContext,readJobContext};
+ return {ok:true,url:location.href,title,company:jobContext.company,scanId,fields,jobContext};
 }

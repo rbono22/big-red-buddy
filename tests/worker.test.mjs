@@ -23,6 +23,7 @@ test('worker claim groups keep job discovery out of reminder and model capacity'
  assert.equal(REMINDER_TYPES.includes('jobs-search'),false);
  assert.equal(MODEL_TYPES.includes('jobs-search'),false);
  assert.ok(MODEL_TYPES.includes('career-experience'));
+ assert.ok(MODEL_TYPES.includes('autofill-resume-enhance'));
  assert.ok(MODEL_TYPES.includes('telegram-syllabus'));
  for(const group of [MODEL_TYPES,REMINDER_TYPES,DISCOVERY_TYPES])assert.equal(new Set(group).size,group.length);
  const all=[...MODEL_TYPES,...REMINDER_TYPES,...DISCOVERY_TYPES];assert.equal(new Set(all).size,all.length);
