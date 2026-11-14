@@ -29,6 +29,16 @@ test('real PostgreSQL runtime roles, FORCE RLS, atomic queue concurrency and lea
   await assert.rejects(()=>runtimePool.query("SELECT * FROM dabas.claim_job('forged',NULL,60000,1,gen_random_uuid())"),{code:'42501'});
   await assert.rejects(()=>openDatabase({databaseUrl:urlFor(owner),encryptionKey:key,production:true}),/own/);await assert.rejects(()=>openDatabase({databaseUrl:adminUrl,encryptionKey:key,production:true}),/superuser/);
   const outcomes=await Promise.all(Array.from({length:8},()=>db.forUser('a').compareAndSet('reminders','atomic',null,{sent:true})));assert.equal(outcomes.filter(Boolean).length,1);
+  const removableA={text:'private retention a'},removableB={text:'private retention b'};
+  await db.forUser('a').put('retention','same',removableA);await db.forUser('b').put('retention','same',removableB);await db.forUser('a').put('retention','guard',{version:2});
+  const deletion={bucket:'retention',id:'same',expected:removableA,delete:true};
+  assert.equal(await db.forUser('a').compareAndSetMany([deletion,{bucket:'retention',id:'guard',expected:{version:1}}]),false,'a failed guard must prevent every deletion');
+  assert.deepEqual(await db.forUser('a').get('retention','same'),removableA);
+  assert.equal(await db.forUser('a').compareAndSetMany([deletion],{buckets:[{bucket:'retention',ids:['same']}]}),false,'a changed reference bucket must prevent deletion');
+  assert.deepEqual(await db.forUser('a').get('retention','same'),removableA);
+  assert.equal(await db.forUser('a').compareAndSetMany([deletion,{bucket:'retention',id:'guard',expected:{version:2}}],{buckets:[{bucket:'retention',ids:['same','guard']}]}),true);
+  assert.equal(await db.forUser('a').get('retention','same'),null);assert.deepEqual(await db.forUser('b').get('retention','same'),removableB,'deletion stays scoped to its student');
+  assert.deepEqual(await db.forUser('a').get('retention','guard'),{version:2});
   await db.auth.put('oauth_states','one-time',{safe:true});assert.equal((await Promise.all([db.auth.take('oauth_states','one-time'),db.auth.take('oauth_states','one-time')])).filter(Boolean).length,1);
   const jobs=await Promise.all([q.enqueue('a','chat',{text:'A'},{idempotencyKey:'same'}),q.enqueue('a','chat',{text:'A'},{idempotencyKey:'same'})]);assert.equal(jobs[0].id,jobs[1].id);
   await q.enqueue('b','chat',{text:'B'});const claims=await Promise.all(Array.from({length:6},(_,i)=>q.claim(`worker-${i}`,{types:['chat']})));assert.equal(claims.filter(Boolean).length,1);

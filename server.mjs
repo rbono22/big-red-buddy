@@ -16,6 +16,7 @@ import {eventApprovalVersion} from './lib/event-version.mjs';
 import {calendarEventRemoved} from './lib/calendar-mutations.mjs';
 import {readNotificationPreferences,saveNotificationPreferences,FRESH_NOTIFICATION_PREFERENCES} from './lib/notification-preferences.mjs';
 import {listNews,saveNewsSettings,listNewsLabels,selectNewsLabel,startAutomaticNews,disconnectNews} from './lib/news.mjs';
+import {listLinkedInJobEmail,enableLinkedInJobEmail,stopLinkedInJobEmail} from './lib/linkedin-job-email.mjs';
 import {listAcademicCalendar,addAcademicCalendarEvents} from './lib/academic-calendar.mjs';
 import {listEventEmailLabels,selectEventEmailLabel,enableAutomaticEventEmail,stopEventEmailMonitoring,disconnectEventEmail,listEventEmailInbox} from './lib/event-email.mjs';
 import {getCareerProfile,saveCareerProfile,saveCareerAnswer,saveApplicationAutopilot} from './lib/career.mjs';
@@ -163,6 +164,7 @@ async function state(store) {
   return {
     notifications:await readNotificationPreferences(store),
     news:await listNews(store),
+    linkedinJobEmail:await listLinkedInJobEmail(store),
     eventHub:await buildEventHub(store),
     academicCalendar:academic.settings,
     canvas:{...await readCanvasStatus(store),email:await readCanvasEmailStatus(store)},
@@ -494,6 +496,7 @@ async function route(req, res) {
   if(p==='/api/event-hub'&&req.method==='GET'){await listAcademicCalendar(store);return json(res,200,await buildEventHub(store));}
   if(p==='/api/event-email/labels'&&req.method==='GET')return json(res,200,await listEventEmailLabels(store));
   if(p==='/api/news'&&req.method==='GET')return json(res,200,await listNews(store));
+  if(p==='/api/career/linkedin-alerts'&&req.method==='GET')return json(res,200,await listLinkedInJobEmail(store));
   if(p==='/api/news/labels'&&req.method==='GET')return json(res,200,await listNewsLabels(store));
   if(p==='/api/academic'&&req.method==='GET')return json(res,200,await listAcademicCalendar(store));
   if(p==='/api/daily-briefing/preview'&&req.method==='GET')return json(res,200,await buildDailyBriefing(store));
@@ -527,6 +530,14 @@ async function route(req, res) {
     return json(res,200,{...await editDemographics(store,input.values,{expectedRevision:input.expectedRevision}),fields:DEMOGRAPHIC_FIELDS});
   }
   if(p==='/api/news/connect')return json(res,200,await auth.beginGoogle(req,res,{purpose:'event-email',userSession:session,returnPath:'/#news'}));
+  if(p==='/api/career/linkedin-alerts/connect')return json(res,200,await auth.beginGoogle(req,res,{purpose:'event-email',userSession:session,returnPath:'/#careers'}));
+  if(p==='/api/career/linkedin-alerts/enable'){
+    heavyLimiter.check(user.id);await enableLinkedInJobEmail(store,await body(req));return json(res,202,await task(user,'linkedin-job-email-sync',{}, {retrySafe:true,maxAttempts:2}));
+  }
+  if(p==='/api/career/linkedin-alerts/stop')return json(res,200,await stopLinkedInJobEmail(store));
+  if(p==='/api/career/linkedin-alerts/sync'){
+    heavyLimiter.check(user.id);return json(res,202,await task(user,'linkedin-job-email-sync',{}, {retrySafe:true,maxAttempts:2}));
+  }
   if(p==='/api/news/settings')return json(res,200,await saveNewsSettings(store,await body(req)));
   if(p==='/api/news/automatic'){
     heavyLimiter.check(user.id);await startAutomaticNews(store,await body(req));return json(res,202,await task(user,'news-sync',{}, {retrySafe:false,maxAttempts:1}));

@@ -19,7 +19,7 @@ async function until(check,{timeout=15000,interval=30}={}){const start=Date.now(
 const quantile=(values,q)=>values.slice().sort((a,b)=>a-b)[Math.min(values.length-1,Math.floor(values.length*q))]??null;
 
 test('worker claim groups keep job discovery out of reminder and model capacity',()=>{
- assert.deepEqual(DISCOVERY_TYPES,['jobs-search','job-alerts']);
+ assert.deepEqual(DISCOVERY_TYPES,['jobs-search','job-alerts','linkedin-job-email-sync','linkedin-job-alerts']);
  assert.equal(REMINDER_TYPES.includes('jobs-search'),false);
  assert.equal(MODEL_TYPES.includes('jobs-search'),false);
  assert.ok(MODEL_TYPES.includes('career-experience'));

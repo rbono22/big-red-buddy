@@ -1069,6 +1069,25 @@ dialog h2 { margin-bottom: 12px; font: 400 30px/1.25 var(--serif); letter-spacin
 .career-list-tools,.career-job-row-tools { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .career-list-tools { justify-content:flex-end; }
 .career-list-tools .button { white-space:normal; }
+.linkedin-job-alerts { margin-top:28px; }
+.linkedin-alert-controls { display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px 24px; margin-top:20px; }
+.linkedin-alert-controls .field { flex:1 1 240px; max-width:360px; margin:0; }
+.linkedin-alert-controls .form-actions { margin:0; flex-wrap:wrap; }
+.linkedin-alert-privacy { margin:14px 0; }
+.linkedin-alert-privacy summary { cursor:pointer; font-size:14px; font-weight:600; }
+.linkedin-alert-jobs { list-style:none; margin:16px 0 0; padding:0; }
+.linkedin-alert-jobs li { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px 0; border-top:1px solid var(--line); }
+.linkedin-alert-jobs li>div { min-width:0; }
+.linkedin-alert-jobs h3 { font:600 17px/1.4 var(--sans,Arial,sans-serif); margin:0 0 5px; overflow-wrap:anywhere; }
+.linkedin-alert-jobs h3 a { color:var(--ink); text-underline-offset:4px; }
+.linkedin-alert-jobs p { margin:0 0 7px; font-size:14px; overflow-wrap:anywhere; }
+.linkedin-alert-jobs small { color:var(--muted); }
+.linkedin-alert-jobs .career-job-row-tools { flex-shrink:0; justify-content:flex-end; }
+@media(max-width:720px) {
+ .linkedin-alert-controls .field { max-width:none; }
+ .linkedin-alert-jobs li { align-items:flex-start; flex-direction:column; gap:12px; }
+ .linkedin-alert-jobs .career-job-row-tools { justify-content:flex-start; }
+}
 .career-cleanup p { line-height:1.6; }
 dialog:has(.career-cleanup) > .dialog-close { display:none; }
 .career-cleanup-counts { padding:16px 20px 16px 40px; border:1px solid var(--line); border-radius:12px; background:var(--paper); }

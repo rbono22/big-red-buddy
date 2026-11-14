@@ -36,6 +36,15 @@ test('relevance combines target titles, resume evidence and explicit location wi
   assert.equal(scoreJobRelevance({title:'Data Analyst',description:'Python and SQL'},{resume:'Veteran disability accommodation Python SQL'}).eligible,false);
 });
 
+test('LinkedIn alert imports do not consume employer-board discovery capacity',async t=>{
+ const s=await setup(t),records=[];
+ for(let i=0;i<1799;i++)records.push({bucket:'jobs',id:`old-board-${i}`,expected:null,value:{id:`old-board-${i}`,provider:'greenhouse',board:'other',status:'closed',closed:true}});
+ for(let i=0;i<200;i++)records.push({bucket:'jobs',id:`linkedin-${i}`,expected:null,value:{id:`linkedin-${i}`,provider:'linkedin-email',publishedAt:null}});
+ assert.equal(await s.store.compareAndSetMany(records),true);
+ const result=await refreshOnly(s.store,'example','ashby',s.options);assert.equal(result.count,1);
+ assert.equal((await s.store.all('jobs')).length,2000);
+});
+
 test('Ashby records source facts, compensation and firstSeen separately from published dates',async t=>{
   const s=await setup(t),raw=posting('one',{compensation:{scrapeableCompensationSalarySummary:'$100K–$140K'}});let requested;
   const options={...s.options,fetchImpl:async url=>{requested=url;return source([raw])();}};

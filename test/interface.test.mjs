@@ -5,6 +5,29 @@ import vm from 'node:vm';
 import { parseHTML } from 'linkedom';
 import {DEMOGRAPHIC_FIELDS} from '../lib/demographics.mjs';
 
+test('LinkedIn email source starts off, connects explicitly, and does not search on page load',async()=>{
+ const fixture=designFixture(),view=await renderDesignFixture(fixture,{'/api/career/linkedin-alerts/connect':{url:'https://accounts.google.com/test-oauth'}});view.navigate('careers');
+ const panel=view.document.querySelector('#linkedin-job-alerts');assert.match(panel.textContent,/jobalerts-noreply@linkedin.com/);assert.match(panel.textContent,/mailbox-wide read-only/);assert.equal(panel.querySelector('[data-action="linkedin-alert-enable"]'),null);assert.equal(view.requests.some(r=>r.options?.method==='POST'),false);
+ clickUI(view,'[data-action="linkedin-alert-connect"]');await settled();assert.deepEqual(JSON.parse(view.requests.find(r=>r.url==='/api/career/linkedin-alerts/connect').options.body),{});assert.equal(view.requests.some(r=>r.url.endsWith('/linkedin-alerts/enable')),false);
+});
+
+test('LinkedIn email jobs use received dates, strip tracking, escape text, and save through the existing shortlist',async()=>{
+ const fixture=designFixture(),job={id:'linkedin-1',title:'Analyst <img src=x>',company:'Example & Co',location:'New York',url:'https://www.linkedin.com/jobs/view/123456789?tracking=private',receivedAt:'2026-11-10T20:00:00Z',provider:'linkedin-email',saved:false};fixture.jobs=[job];fixture.linkedinJobEmail={connected:true,continuous:true,delivery:'daily',jobs:[job,{...job,id:'hostile',url:'https://www.linkedin.com.evil.invalid/jobs/view/123456789'}]};
+ const view=await renderDesignFixture(fixture,{'/api/jobs/save':{saved:true}});view.navigate('careers');const panel=view.document.querySelector('#linkedin-job-alerts');assert.equal(panel.querySelectorAll('.linkedin-alert-jobs li').length,1);assert.equal(panel.querySelector('img'),null);assert.match(panel.querySelector('.linkedin-alert-jobs').textContent,/Received Nov 10, 2026/);assert.doesNotMatch(panel.querySelector('.linkedin-alert-jobs').textContent,/Posted/);assert.equal(panel.querySelector('a[href*="jobs/view"]').getAttribute('href'),'https://www.linkedin.com/jobs/view/123456789');assert.deepEqual(careerVisibleIds(view),[]);
+ clickUI(view,'#linkedin-job-alerts [data-action="career-save-job"]');await settled();assert.deepEqual(JSON.parse(view.requests.find(r=>r.url==='/api/jobs/save').options.body),{id:'linkedin-1',saved:true});assert.equal(view.document.querySelector('#linkedin-job-alerts [data-action="career-save-job"]').getAttribute('aria-pressed'),'true');
+});
+
+test('LinkedIn monitoring saves the selected delivery mode, supports stopping a queued check, and ignores its later completion',async()=>{
+ const fixture=designFixture();fixture.linkedinJobEmail={connected:true,continuous:false,delivery:'daily',jobs:[]};const view=await renderDesignFixture(fixture,{'/api/career/linkedin-alerts/enable':options=>{fixture.linkedinJobEmail={...fixture.linkedinJobEmail,...JSON.parse(options.body),continuous:true};return {taskId:'linkedin-check'};},'/api/career/linkedin-alerts/stop':()=>{fixture.linkedinJobEmail.continuous=false;return fixture.linkedinJobEmail;},'/api/tasks':[{id:'linkedin-check',status:'done'}]});view.navigate('careers');
+ const choice=view.document.querySelector('#linkedin-alert-delivery');for(const option of choice.querySelectorAll('option'))option.selected=option.value==='alerts';choice.dispatchEvent(new view.window.Event('change',{bubbles:true}));clickUI(view,'[data-action="linkedin-alert-enable"]');await settled();assert.deepEqual(JSON.parse(view.requests.find(r=>r.url==='/api/career/linkedin-alerts/enable').options.body),{delivery:'alerts'});assert.equal(view.document.querySelector('[data-action="linkedin-alert-sync"]').disabled,true);assert.equal(view.document.querySelector('[data-action="linkedin-alert-stop"]').disabled,false);
+ clickUI(view,'[data-action="linkedin-alert-stop"]');await settled();for(const timer of view.timers.filter(item=>item.ms===1500))await timer.callback();assert.match(view.document.querySelector('#linkedin-alert-status').textContent,/monitoring stopped/);assert.equal(view.document.querySelector('[data-action="linkedin-alert-sync"]'),null);assert.equal(view.requests.some(r=>r.url==='/api/tasks'),false);
+});
+
+test('LinkedIn alert activation replies cannot populate a later student workspace',async()=>{
+ let signedIn=true,student='first',release;const pending=new Promise(resolve=>release=resolve),fixture=designFixture();fixture.linkedinJobEmail={connected:true,continuous:false,delivery:'alerts',jobs:[]};
+ const view=await renderDesignFixture(fixture,{'/api/session':()=>({user:signedIn?{id:student,name:'Student'}:null,csrfToken:'fixture',devEnabled:true,devEmails:['second@cornell.edu']}),'/auth/logout':()=>{signedIn=false;return{};},'/api/career/linkedin-alerts/enable':()=>pending});view.navigate('careers');clickUI(view,'[data-action="linkedin-alert-enable"]');await settled();view.navigate('connections');clickUI(view,'[data-action="logout"]');await settled();signedIn=true;student='second';clickUI(view,'[data-action="dev-signin"]');await settled();view.navigate('careers');const before=view.requests.length;release({taskId:'private-first-student-check'});await settled();assert.equal(view.requests.length,before);assert.equal(view.timers.some(timer=>timer.ms===1500),false);assert.doesNotMatch(view.document.querySelector('#linkedin-alert-status').textContent,/queued|enabled|private-first-student/);
+});
+
 async function applicationScript(){
  const scripts=await Promise.all(['schedule-groups.js','career-search.js','app.js'].map(name=>readFile(new URL(`../public/${name}`,import.meta.url),'utf8')));
  return scripts.join('\n');

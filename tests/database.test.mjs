@@ -8,6 +8,18 @@ import {createQueue} from '../lib/queue.mjs';
 
 async function local(t){const dir=await mkdtemp(path.join(tmpdir(),'dabas-storage-'));const db=await openDatabase({dataDir:dir,databaseUrl:null,production:false,allowLocal:true});t.after(async()=>{await db.close();await rm(dir,{recursive:true,force:true});});return {db,dir};}
 
+test('atomic retention deletion respects concurrent saves, application inserts, and tenant ownership',async t=>{
+ const {db}=await local(t),a=db.forUser('a'),b=db.forUser('b'),job={id:'job',title:'Synthetic role'};
+ await a.put('jobs','job',job);await b.put('jobs','job',job);
+ const deletion=[{bucket:'jobs',id:'job',expected:job,delete:true},{bucket:'jobSaves',id:'job',expected:null}];
+ await a.put('jobSaves','job',{saved:true});assert.equal(await a.compareAndSetMany(deletion),false);assert.deepEqual(await a.get('jobs','job'),job);
+ await a.delete('jobSaves','job');await a.put('applications','new',{jobId:'job'});
+ assert.equal(await a.compareAndSetMany(deletion,{buckets:[{bucket:'applications',ids:[]}]}),false);
+ await assert.rejects(()=>a.compareAndSetMany([{...deletion[0],value:{}}]),/Invalid atomic deletion/);
+ assert.equal(await a.compareAndSetMany(deletion,{buckets:[{bucket:'applications',ids:['new']}]}),true);
+ assert.equal(await a.get('jobs','job'),null);assert.deepEqual(await b.get('jobs','job'),job);
+});
+
 test('tenant ownership, encrypted payloads, bounded reads and ciphertext swap resistance',async t=>{
  const {db,dir}=await local(t),a=db.forUser('student-a'),b=db.forUser('student-b');
  await a.put('resumes','same',{text:'private resume A'});await b.put('resumes','same',{text:'private resume B'});
