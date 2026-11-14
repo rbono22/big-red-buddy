@@ -1,6 +1,7 @@
 import {liveApplicationSupported} from './lib/application-providers.mjs';
 import {startLiveApplication} from './lib/live-applications.mjs';
 import {createApplicationHandoff,redeemApplicationHandoff} from './lib/application-handoff.mjs';
+import {prepareStandaloneAutofill} from './lib/application-autofill.mjs';
 import {listApplicationAnswerMemory,deleteApplicationAnswerMemory,listAllSavedAnswers,deleteAnySavedAnswer} from './lib/application-answer-memory.mjs';
 import {personalCalendarStatus,savePersonalCalendars} from './lib/personal-calendar.mjs';
 import { pilotSheetConfig, isPilotOwner, createPilotSheetSync, PILOT_REFRESH_MS } from './lib/pilot-access.mjs';
@@ -88,6 +89,7 @@ const limiter = new RateLimiter({
   heavyLimiter = new RateLimiter({
     limit: 8
   });
+const autofillLimiter=new RateLimiter({limit:30});
 const adminEmails = String(process.env.ADMIN_EMAILS || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
 const bodyOwners = new WeakMap(), readJsonBody = createJsonBodyReader();
 function closeRequestAfterResponse(req, res) {
@@ -502,6 +504,10 @@ async function route(req, res) {
     return res.end(email.html);
   }
   if (req.method !== 'POST') throw new HttpError(404, 'Endpoint not found.');
+  if(p==='/api/career/application-autofill'){
+    autofillLimiter.check(user.id);
+    return json(res,200,{autofill:await prepareStandaloneAutofill(store,await body(req))});
+  }
   if(p==='/api/career/resume-enhance'){
     heavyLimiter.check(user.id);const input=await body(req);
     if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==1||typeof input.jobId!=='string')throw new HttpError(400,'Choose a job for your enhanced résumé.');

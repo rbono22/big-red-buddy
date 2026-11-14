@@ -1266,7 +1266,7 @@ test('application browser handoff page explains setup without creating a secret 
  const view=await renderDesignFixture(designFixture());view.navigate('application-handoff/fixture-application');
  assert.match(view.document.querySelector('h1').textContent,/Continue in your browser/);
  const panel=view.document.querySelector('#application-handoff');assert.match(panel.textContent,/chrome:\/\/extensions/);assert.match(panel.textContent,/Load unpacked/);assert.match(panel.textContent,/Complete any remaining questions and submit/);
- const open=panel.querySelector('a[data-brb-autofill]');assert.equal(open.textContent,'Open & autofill application');assert.equal(open.getAttribute('href'),'/#application-handoff/fixture-application');assert.match(panel.textContent,/With BRB helper version 0\.1\.3 installed/);assert.match(panel.textContent,/Refresh this BRB page/);
+ const open=panel.querySelector('a[data-brb-autofill]');assert.equal(open.textContent,'Open & autofill application');assert.equal(open.getAttribute('href'),'/#application-handoff/fixture-application');assert.match(panel.textContent,/With BRB helper version 0\.2\.0 installed/);assert.match(panel.textContent,/Refresh this BRB page/);
  assert.equal(panel.querySelector('a[download]').getAttribute('href'),'/browser-helper.zip');
  assert.equal(panel.querySelector('[data-token],input,textarea'),null);
  assert.equal(view.requests.some(r=>r.url.includes('/application-handoff')),false);
@@ -1281,7 +1281,7 @@ test('handoff click without an active helper explains setup while extension-hand
   if(intercepted)click.preventDefault();open.dispatchEvent(click);
   assert.equal(Boolean(panel.querySelector('#handoff-helper-setup').open),!intercepted);
   assert.equal(Boolean(panel.querySelector('#handoff-launch-status').textContent),!intercepted);
-  if(!intercepted)assert.match(panel.querySelector('#handoff-launch-status').textContent,/Install or update to version 0\.1\.3/);
+  if(!intercepted)assert.match(panel.querySelector('#handoff-launch-status').textContent,/Install or update to version 0\.2\.0/);
   assert.equal(open.getAttribute('href'),'/#application-handoff/fixture-application');assert.equal(view.requests.some(r=>r.url.includes('/application-handoff')||r.options?.method==='POST'),false);
  }
 });

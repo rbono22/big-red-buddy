@@ -41,9 +41,9 @@ test('manual recovery forwards the uncertainty warning through the exact employe
 test('popup reports prior uncertainty without claiming the previous application was unsent',async()=>{
  const script=await readFile(new URL('../browser-extension/popup.js',import.meta.url),'utf8');
  for(const uncertain of [false,true]){
-  let click;const button={addEventListener:(_,fn)=>{click=fn;}},status={textContent:''};
-  runInNewContext(script,{document:{getElementById:id=>id==='fill'?button:status},chrome:{runtime:{sendMessage:async()=>({ok:true,filled:3,remaining:1,priorSubmissionUnconfirmed:uncertain})}}});
-  await click();assert.match(status.textContent,/Filled 3 fields/);assert.match(status.textContent,/This helper did not submit/);assert.equal(button.disabled,false);
+  let click;const button={addEventListener:(_,fn)=>{click=fn;}},status={textContent:''},other={textContent:'',addEventListener(){}};
+  runInNewContext(script,{document:{getElementById:id=>id==='fill'?button:id==='status'?status:other},chrome:{runtime:{sendMessage:async message=>message.action==='getContext'?{ok:true,context:'handoff'}:{ok:true,filled:3,remaining:1,priorSubmissionUnconfirmed:uncertain}}}});
+  await new Promise(resolve=>setImmediate(resolve));await click();assert.match(status.textContent,/Filled 3 fields/);assert.match(status.textContent,/This helper did not submit/);assert.equal(button.disabled,false);
   if(uncertain){assert.match(status.textContent,/previous submission attempt may already have succeeded/);assert.match(status.textContent,/Check employer confirmation before submitting again/);assert.doesNotMatch(status.textContent,/Nothing was submitted/);}
  }
 });
@@ -94,7 +94,7 @@ test('extension accepts the exact application URLs the server builds, including 
 });
 test('the downloadable helper zip matches the helper source, so a fix always ships to students',async()=>{
  const {execFileSync}=await import('node:child_process');
- for(const name of ['manifest.json','background.mjs','brb-content.js','fill.mjs','popup.html','popup.css','popup.js','README.md']){
+ for(const name of ['manifest.json','background.mjs','brb-content.js','fill.mjs','scan.mjs','popup.html','popup.css','popup.js','README.md']){
   const zipped=execFileSync('unzip',['-p','public/browser-helper.zip',`BRB-browser-helper/${name}`]);
   assert.ok(zipped.equals(await readFile(`browser-extension/${name}`)),`public/browser-helper.zip is stale for ${name}; rebuild it from browser-extension/`);
  }

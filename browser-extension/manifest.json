@@ -1,9 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Big Red Buddy - Application Helper",
-  "version": "0.1.3",
-  "description": "Fill a BRB application in your own browser. You finish and submit on the employer website.",
-  "permissions": ["activeTab", "scripting"],
+  "version": "0.2.0",
+  "description": "Autofill job applications with your saved BRB profile, r\u00e9sum\u00e9, and answers. Start on an employer page, in BRB, or from Telegram.",
+  "permissions": [
+    "activeTab",
+    "scripting"
+  ],
   "host_permissions": [
     "https://app.bigredbuddy.com/*",
     "https://jobs.lever.co/*",
@@ -11,8 +14,28 @@
     "https://jobs.ashbyhq.com/*",
     "https://apply.workable.com/*"
   ],
-  "action": {"default_title": "Fill with Big Red Buddy", "default_popup": "popup.html"},
-  "content_scripts": [{"matches": ["https://app.bigredbuddy.com/*"], "js": ["brb-content.js"], "run_at": "document_idle", "all_frames": false}],
-  "background": {"service_worker": "background.mjs", "type": "module"},
-  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'"}
+  "action": {
+    "default_title": "Fill with Big Red Buddy",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://app.bigredbuddy.com/*"
+      ],
+      "js": [
+        "brb-content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "background": {
+    "service_worker": "background.mjs",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  },
+  "minimum_chrome_version": "106"
 }
