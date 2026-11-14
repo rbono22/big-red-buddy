@@ -31,6 +31,13 @@ test('unsafe target schemes, credentials, local addresses, and BRB are rejected'
  for(const target of ['http://careers.example.org','https://localhost/a','https://10.0.0.1/a','https://127.1/a','https://[::1]/a','https://jobs.internal/a','https://jobs.local/a','https://user:pass@careers.example.org','https://careers.example.org:8443','file:///tmp/a','data:text/html,hi','https://app.bigredbuddy.com/form','https://localhost.'])assert.throws(()=>standaloneApplicationURL(target),{status:400},target);
  assert.equal(standaloneApplicationURL(url),url);
 });
+test('Harvey legal and preferred name fields use the saved applicant names without filling reference names',async()=>{
+ const s=await fixture(),fields=[field('legal','Legal First and Last Name*'),field('first','Preferred First Name*'),field('last','Preferred Last Name*'),field('amp','Legal first & last name (required)'),field('reference','Reference legal first and last name'),field('contact','Emergency contact preferred last name')];
+ const result=await prepareStandaloneAutofill(readonly(s),{url,fields});
+ assert.deepEqual(result.answers,{legal:{value:'Alex Example'},first:{value:'Alex'},last:{value:'Example'},amp:{value:'Alex Example'}});
+ await saveCareerProfile(s,{lastName:''});
+ assert.equal((await prepareStandaloneAutofill(readonly(s),{url,fields})).answers.last,undefined,'a missing surname is not guessed by splitting the full name');
+});
 test('untrusted metadata cannot request raw answers, profile hints, password controls, or unrelated attachments',async()=>{
  const s=await fixture();
  for(const input of [{url,fields:[field('one','Email')],token:'secret'},{url,fields:[field('one','Email','text',{profileField:'email'})]},{url,fields:[field('one','Email','password')]},{url,fields:[field('same','Name'),field('same','Email')]},{url,fields:[field('__proto__','Name')]},{url,fields:[field('one','Email','text',{value:'present'})]}])await assert.rejects(prepareStandaloneAutofill(s,input),{status:400});

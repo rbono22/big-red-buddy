@@ -211,3 +211,11 @@ test('country code and preferred first name come from saved facts; wording varia
  assert.deepEqual(missing,['Do you currently require sponsorship to work in the US?','Will you require sponsorship from us now or in the future?','Are you authorized to work in the country for which you applied?']);
  assert.equal(quickApplicationAnswers({fields:[form.fields[0]]},{...profile,location:'Toronto, ON, Canada'},'Resume.pdf').missing.length,1,'no country is guessed outside the US');
 });
+test('Harvey legal and preferred names reuse exact applicant facts in Telegram applications',async()=>{
+ const {quickApplicationAnswers}=await import('../lib/live-applications.mjs');
+ const profile={fullName:'Alex Example',firstName:'Alex',lastName:'Example'},form={fields:['Legal First and Last Name*','Preferred First Name*','Preferred Last Name*','Legal first & last name (required)','Reference legal first and last name','Emergency contact preferred last name'].map((label,index)=>({key:'name-'+index,type:'text',label,required:true,options:[]}))};
+ const result=quickApplicationAnswers(form,profile,'Resume.pdf');
+ assert.equal(result.answers['name-0'].value,profile.fullName);assert.equal(result.answers['name-1'].value,profile.firstName);assert.equal(result.answers['name-2'].value,profile.lastName);assert.equal(result.answers['name-3'].value,profile.fullName);
+ assert.equal(result.answers['name-4'],undefined);assert.equal(result.answers['name-5'],undefined);
+ assert.equal(quickApplicationAnswers(form,{...profile,lastName:''},'Resume.pdf').answers['name-2'],undefined);
+});
