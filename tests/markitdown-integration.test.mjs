@@ -176,4 +176,58 @@ test('installed MarkItDown and local OCR preserve actual PDF/photo content and b
     assert.equal(result.stdout.trim(), 'external-access-denied');
     assert.equal(result.stderr, '');
   });
+
+  await t.test('native dependency writes cannot contaminate bridge JSON or leak through stderr', async () => {
+    // C/C++ dependencies can bypass contextlib.redirect_* by writing directly
+    // to file descriptors. Inject both import-time and conversion-time writes.
+    const code = [
+      'import atexit, os, runpy, sys',
+      'module = runpy.run_path(sys.argv[1])',
+      'namespace = module["main"].__globals__',
+      'original_load = namespace["load_converters"]',
+      'original_extract = namespace["extract_pages"]',
+      'def native_log(stage):',
+      '    os.write(1, ("NATIVE_PRIVATE_STDOUT_" + stage + "\\n").encode())',
+      '    os.write(2, ("NATIVE_PRIVATE_STDERR_" + stage + "\\n").encode())',
+      'atexit.register(native_log, "ATEXIT")',
+      'def noisy_load():',
+      '    native_log("IMPORT")',
+      '    return original_load()',
+      'def noisy_extract(*args):',
+      '    native_log("EXTRACTION")',
+      '    return original_extract(*args)',
+      'namespace["load_converters"] = noisy_load',
+      'namespace["extract_pages"] = noisy_extract',
+      'raise SystemExit(module["main"](sys.argv[2:]))',
+    ].join('\n');
+    for (const [args, expectedError] of [
+      [['--check']],
+      [[path.join(fixtures, 'searchable.pdf'), '--pages', '2']],
+      [[path.join(fixtures, 'encrypted.pdf'), '--pages', '2'], 'encrypted_pdf'],
+    ]) {
+      let result;
+      try {
+        result = await exec(python, ['-I', '-c', code, MARKITDOWN_SCRIPT, ...args], toolOptions);
+        assert.equal(expectedError, undefined, 'The encrypted fixture must still be rejected');
+      } catch (error) {
+        if (!expectedError) throw error;
+        assert.equal(error.code, 1);
+        result = error;
+      }
+      assert.equal(result.stderr, '', 'Native stderr must be suppressed, not merely Python sys.stderr');
+      assert.doesNotMatch(result.stdout, /NATIVE_PRIVATE_/);
+      const response = JSON.parse(result.stdout);
+      assert.equal(response.engine, 'markitdown');
+      assert.equal(response.packageVersion, '0.1.9');
+      if (expectedError) {
+        assert.equal(response.available, false);
+        assert.equal(response.error, expectedError);
+      } else if (args[0] === '--check') assert.equal(response.available, true);
+      else {
+        assert.equal(response.pages.length, 2);
+        assert.match(response.pages[0], /December 1, 2026 at 5 PM/);
+        assert.match(response.pages[1], /December 15, 2026 at 2 PM/);
+      }
+    }
+  });
 });

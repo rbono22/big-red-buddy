@@ -8,7 +8,6 @@ Only the PDF converter is called, with in-memory single-page streams. Images
 and scanned PDF pages continue through BRB's existing local OCR pipeline.
 """
 
-import contextlib
 import importlib.metadata
 import io
 import json
@@ -42,7 +41,7 @@ def deny_external_access(event, _args):
         raise PermissionError("external_access_disabled")
 
 
-def apply_resource_limits():
+def apply_resource_limits(output_fd=1):
     import resource
 
     def lower_limit(kind, soft, hard=None):
@@ -71,9 +70,12 @@ def apply_resource_limits():
             while True:
                 # Darwin reports ru_maxrss in bytes (Linux uses KiB).
                 if resource.getrusage(resource.RUSAGE_SELF).ru_maxrss > MAX_MEMORY:
-                    os.write(1, b'{"version":1,"engine":"markitdown",'
-                                b'"packageVersion":"0.1.9","available":false,'
-                                b'"error":"resource_limit"}\n')
+                    try:
+                        os.write(output_fd, b'{"version":1,"engine":"markitdown",'
+                                            b'"packageVersion":"0.1.9","available":false,'
+                                            b'"error":"resource_limit"}\n')
+                    except OSError:
+                        pass
                     os._exit(1)
                 time.sleep(0.1)
 
@@ -170,10 +172,15 @@ def extract_pages(data, expected_pages, converters):
         raise ExtractionError("invalid_pdf") from None
 
 
-def main(arguments):
-    # Keep the bounded JSON payload below the Node bridge's 1 MiB limit even
-    # for non-Latin documents (ASCII escaping could expand every character).
-    sys.stdout.reconfigure(encoding="utf-8", errors="strict")
+def emit_result(output_fd, result):
+    # A private duplicate of the original stdout is the sole public channel.
+    # File I/O handles partial pipe writes; UTF-8 avoids expanding non-Latin
+    # document text past the Node bridge's 1 MiB output limit.
+    with os.fdopen(os.dup(output_fd), "w", encoding="utf-8", errors="strict") as stream:
+        stream.write(json.dumps(result, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def run(arguments, output_fd):
     metadata = {"version": 1, "engine": "markitdown", "packageVersion": PACKAGE_VERSION}
     try:
         check = arguments == ["--check"]
@@ -187,18 +194,15 @@ def main(arguments):
 
         sys.dont_write_bytecode = True
         sys.addaudithook(deny_external_access)
-        apply_resource_limits()
+        apply_resource_limits(output_fd)
         logging.disable(logging.CRITICAL)
         warnings.simplefilter("ignore")
-        # Dependency logs must not leak document text, metadata, or paths.
-        with open(os.devnull, "w", encoding="utf-8") as sink:
-            with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
-                data = None if check else read_pdf(arguments[0])
-                converters = load_converters()
-                output = ({**metadata, "available": True} if check else {
-                    **metadata, "pages": extract_pages(data, expected_pages, converters)
-                })
-        print(json.dumps(output, ensure_ascii=False, separators=(",", ":")))
+        data = None if check else read_pdf(arguments[0])
+        converters = load_converters()
+        output = ({**metadata, "available": True} if check else {
+            **metadata, "pages": extract_pages(data, expected_pages, converters)
+        })
+        emit_result(output_fd, output)
         return 0
     except ExtractionError as error:
         code = str(error)
@@ -206,8 +210,25 @@ def main(arguments):
         code = "resource_limit"
     except Exception:
         code = "conversion_failed"
-    print(json.dumps({**metadata, "available": False, "error": code}, separators=(",", ":")))
+    emit_result(output_fd, {**metadata, "available": False, "error": code})
     return 1
+
+
+def main(arguments):
+    # Native libraries can write directly to fd 1/2, bypassing Python's stream
+    # redirects. This bridge owns its process: mute both descriptors until exit
+    # so even delayed C stdio flushes/atexit logs cannot expose document data.
+    # Keep only a private stdout duplicate for the final sanitized JSON result.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    output_fd = os.dup(1)
+    try:
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            os.dup2(sink.fileno(), 1)
+            os.dup2(sink.fileno(), 2)
+        return run(arguments, output_fd)
+    finally:
+        os.close(output_fd)
 
 
 if __name__ == "__main__":
