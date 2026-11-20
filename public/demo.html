@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#b31b1b"><meta name="description" content="Try Big Red Buddy with a sample student schedule. No login required.">
+  <title>Try the demo · Big Red Buddy</title>
+  <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/demo.css">
+</head>
+<body class="demo-page">
+  <a class="skip" href="#demo-main">Skip to content</a>
+  <header class="demo-header"><a class="brand" href="/" aria-label="Big Red Buddy home"><span class="brand-mark">BRB</span><span>Big Red Buddy</span></a><a class="button secondary" href="/">Sign in to your workspace</a></header>
+  <main id="demo-main" tabindex="-1">
+    <section class="demo-intro"><span class="tag">TRY THE DEMO · NO ACCOUNT NEEDED</span><h1>One week.<br>One reviewed list.</h1><p>Meet Alex, a sample student balancing coursework, Studio, and campus life. Review a deadline, ask about the week, and see what changes when a syllabus does.</p><p class="demo-disclosure"><strong>Sample clock: Wednesday, November 18, 2026 · New York.</strong><br>All records are fictional. Your changes last until you refresh this page. Calendar actions are previews; no messages are sent.</p></section>
+    <div class="demo-workflow"><div><span class="demo-label">BEFORE</span><p>Check Canvas + Slack + email + a spreadsheet. Copy dates and reconcile changes yourself.</p></div><span class="demo-arrow" aria-hidden="true">→</span><div><span class="demo-label">WITH BIG RED BUDDY</span><p>Bring imported records into one list. See the source, resolve uncertain times, then approve.</p></div></div>
+    <div class="demo-grid">
+      <section class="panel"><div class="panel-head"><div><h2>Alex’s schedule</h2><p>November 16–29 · America/New_York</p></div><button id="reset-demo" type="button" class="button secondary">Reset demo</button></div><div class="demo-filters" role="group" aria-label="Filter schedule"><button type="button" class="button secondary" data-filter="all" aria-pressed="true">All dates</button><button type="button" class="button secondary" data-filter="review" aria-pressed="false">Needs review</button><button type="button" class="button secondary" data-filter="approved" aria-pressed="false">Calendar preview</button></div><div id="demo-events" class="panel-body"></div></section>
+      <div class="demo-side">
+        <section class="panel"><div class="panel-head"><h2>Ask about this schedule</h2></div><div class="panel-body"><p class="form-help">These sample answers list matching records using code. No live model is called in the demo.</p><div class="demo-prompts"><button type="button" data-question="What deadlines do I have this week?">Deadlines this week</button><button type="button" data-question="What is due next week?">Due next week</button><button type="button" data-question="What is on my schedule tomorrow?">Tomorrow’s schedule</button></div><form id="demo-ask"><label for="demo-question">Your question</label><input id="demo-question" name="question" required maxlength="500" placeholder="What is due this week?"><button type="submit" class="button">Ask the sample assistant</button></form><div id="demo-answer" role="status" aria-live="polite">Try a question above. Every matching date stays visible, including dates awaiting review.</div></div></section>
+        <section class="panel"><div class="panel-head"><h2>When a source changes</h2></div><div class="panel-body"><p>The sample HCI syllabus moves the usability report from Nov 24 to Nov 25. Re-importing flags the change and reopens review.</p><button type="button" id="demo-reimport" class="button secondary">Re-import changed sample syllabus</button><p id="demo-change-status" role="status" aria-live="polite"></p></div></section>
+      </div>
+    </div>
+    <section class="panel demo-explainer"><div class="panel-head"><h2>Who does what, and why</h2></div><div class="panel-body"><div class="demo-table-wrap"><table><thead><tr><th>Who</th><th>Responsibility</th><th>Reason</th></tr></thead><tbody><tr><th>Model</th><td>Reads syllabus text and drafts answers from retrieved records.</td><td>Useful for varied document wording and concise explanations.</td></tr><tr><th>Code</th><td>Parses dates, selects the requested range, flags missing times, and enforces approval before calendar writes.</td><td>Date boundaries and permission checks must be consistent.</td></tr><tr><th>Student</th><td>Checks source evidence, resolves uncertainty, and approves calendar entries.</td><td>The student knows their commitments and controls external actions.</td></tr></tbody></table></div><h3>Your knowledge source</h3><p>The live app retrieves the student’s imported records—Canvas, syllabi, and Telegram records—with their source evidence. Selecting relevant records keeps unrelated material out of the answer and preserves the complete matching date list. Re-imports surface changed material; review is reopened when event details change. Freshness depends on the latest import, not on a model remembering an old document.</p></div></section>
+  </main>
+  <footer class="demo-footer">Independent student prototype · Synthetic sample workspace · <a href="/">Return to sign in</a></footer>
+  <noscript><p>This interactive demo needs JavaScript. Enable it to review the fictional schedule; no account is required.</p></noscript>
+  <script type="module" src="/demo.js"></script>
+</body>
+</html>

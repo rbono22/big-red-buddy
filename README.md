@@ -17,6 +17,23 @@ A student-owned workspace for syllabus planning, Product Studio announcements, c
 
 ## Run the application
 
+For a grader walkthrough without a Cornell account, select **Try the demo** on
+the sign-in screen or open `/demo` on a deployment of this revision. It uses a
+fictional student and a fixed sample clock, with review, source explanations,
+changed-syllabus handling and a calendar preview. It has no live account or
+connector access. Export a standalone offline version with:
+
+```sh
+node scripts/export-public-demo.mjs output/demo.html
+```
+
+The [evaluation pack](eval/pack/README.md) contains the four submission CSVs and
+computed baseline metrics. See [the reviewed workflow](docs/student-workflow.md)
+and [commercial evidence and first-50 plan](docs/commercial-validation.md).
+Missing teammate ratings and unverified complete operating costs are labeled
+explicitly. The private submission ZIP also contains the original video and a
+report generated from the exported data.
+
 Requirements: Node 24+, PostgreSQL, Python >=3.11.5,<3.15 for the audited MarkItDown dependency set, Poppler (`pdfinfo`, `pdftotext`, `pdfimages`, `pdftoppm`), local Tesseract OCR, and a private Ollama server. Apple Vision is the OCR fallback on macOS. Use the dependencies in `package-lock.json` and `requirements-markitdown.txt`. The Docker runtime uses Node 24 trixie-slim with Python 3.13; update older `NODE_IMAGE` overrides as described in [deployment instructions](deploy/PILOT.md).
 
 ```sh

@@ -19,3 +19,7 @@ Each run writes a JSON file and a CSV scoring sheet to `eval/results/`. Teammate
 ## Notes
 
 The usefulness cases give the model the whole document group (all job postings, or all course documents) as context, rather than the app's own job-matching heuristic or syllabus OCR. They test the model's reasoning over a fixed knowledge source. The syllabus OCR path was checked separately in the app: dates were correct, but labels were taken from neighbouring table rows.
+
+## Submission export
+
+Run `python3 scripts/export-eval-pack.py` for the four requested CSVs, measured tier comparison and computed summary under [`pack/`](pack/README.md). The export preserves the historical single-rater scores and makes the four missing teammate score columns explicit. It does not invent independent ratings or claim that the revised application has been re-evaluated by the models.
