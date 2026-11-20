@@ -1,4 +1,5 @@
 import {pruneMenuActions} from './lib/telegram-menu.mjs';
+import {pruneAssistantReplies} from './lib/assistant-delivery.mjs';
 import { pilotWorkAllowed, pilotSheetConfig } from './lib/pilot-access.mjs';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
@@ -57,6 +58,7 @@ async function scheduler() {
           // Retention cleanup also runs after pilot access is revoked.
           await pruneExpiredInvitationFlow(store).catch(()=>{});
           await pruneMenuActions(store).catch(()=>{});
+          await pruneAssistantReplies(store).catch(()=>{});
           if (!await pilotWorkAllowed(db, userId)) continue;
           const newsRetention=await store.get('settings','newsRetention');
           if(!newsRetention?.lastRun||Date.parse(newsRetention.lastRun)<Date.now()-86400000){await pruneNews(store);await store.put('settings','newsRetention',{lastRun:new Date().toISOString()});}

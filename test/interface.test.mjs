@@ -127,7 +127,7 @@ test('mobile-ready schedule markup retains field labels, visible bulk controls, 
   }
   navigate('academics');
   assert.equal(document.querySelector('[data-page="academics"]').getAttribute('aria-current'), 'page');
-  assert.deepEqual([...document.querySelectorAll('tbody tr:first-child td')].map(cell => cell.getAttribute('data-label')), ['Select', 'Item / source', 'New York time', 'Location', 'Status', 'Evidence']);
+  assert.deepEqual([...document.querySelectorAll('tbody tr:first-child td[data-label]')].map(cell => cell.getAttribute('data-label')), ['Select', 'Item / source', 'New York time', 'Location', 'Status', 'Evidence']);
   assert.ok(document.querySelector('table caption').textContent.trim());
   assert.ok(document.querySelector('.table-wrap[role="region"][aria-label]'));
   assert.ok(document.querySelector('#select-all').closest('.table-actions'));
@@ -1320,7 +1320,7 @@ test('browser handoff preserves an unconfirmed submission warning and starts fro
 test('Cornell sign-in preserves only a valid browser handoff destination without loading student data',async()=>{
  for(const hash of ['#application-handoff/fixture-application','#application-handoff/evil?next=https://example.org','#application-handoff/<img>']){
   const view=await renderDesignFixture(designFixture(),{'/api/session':{user:null,googleConfigured:true,devEnabled:false}},{location:{hash,href:''}});
-  const href=view.document.querySelector('.login-cta').getAttribute('href');assert.equal(href,hash==='#application-handoff/fixture-application'?'/auth/google/start?returnTo='+encodeURIComponent('/'+hash):'/auth/google/start');assert.equal(view.requests.some(r=>r.url==='/api/state'||r.url.includes('/application-handoff')),false);
+  const href=view.document.querySelector('a[href^="/auth/google/start"]').getAttribute('href');assert.equal(href,hash==='#application-handoff/fixture-application'?'/auth/google/start?returnTo='+encodeURIComponent('/'+hash):'/auth/google/start');assert.match(view.document.querySelector('a[href="/demo"]').textContent,/Try the demo/);assert.equal(view.requests.some(r=>r.url==='/api/state'||r.url.includes('/application-handoff')),false);
  }
 });
 

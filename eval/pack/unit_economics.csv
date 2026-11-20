@@ -1,0 +1,17 @@
+metric,value,unit,evidence_status,formula,notes
+price_usd_student_month,15,USD/student/month,proposed,15,Founder proposed subscription; not collected revenue
+first_customers_target,50,students,target,10+20+20,Acquisition plan; not actual customers
+target_monthly_revenue_usd,750,USD/month,scenario,15*50,Gross revenue at target; not profit
+hour_value_usd,80,USD/hour,assumption,80,User supplied opportunity-cost assumption; not wages or cash saving
+minutes_saved_per_answer,2,minutes/answer,assumption,2,Illustrative until timed student task comparison
+value_per_answer_usd,2.6666666666666665,USD/answer,scenario,minutes_saved_per_answer*hour_value_usd/60,Time value; not willingness to pay
+cloudflare_payment_usd,11.17,USD,verified payment,11.17,Nov 11 2026 invoice notification and purchase confirmation; available emails omit line items
+monthly_server_bill_usd,,USD/month,missing,,Pilot uses existing Mac; no separate server invoice verified. Do not substitute $0 or $100.
+monthly_total_operating_cost_usd,,USD/month,missing,server+electricity+storage+backups+network+amortization+support,Requires verified bills and allocation; payment above does not establish total
+completed_answers_same_period,,answers/month,missing,,Use successful answers in same billing period; exclude failed/timed-out requests
+cost_per_answer_usd,,USD/answer,missing,monthly_total_operating_cost_usd/completed_answers_same_period,Undefined until cost and volume are supplied; cost of failures remains in numerator
+contribution_margin_usd,,USD/month,missing,target_monthly_revenue_usd-monthly_total_operating_cost_usd,No break-even claim without verified costs
+estimated_laptop_power_w,30,watts,assumption,30,Historical tier benchmark power assumption; not measured electricity
+estimated_electricity_usd_kwh,0.25,USD/kWh,assumption,0.25,Historical tier benchmark electricity rate assumption
+term_months,11,months,scenario,11,Historical pricing scenario duration; not an observed subscription
+term_price_usd,165,USD/student/term,scenario,price_usd_student_month*term_months,"Corrects original report arithmetic: 15 times 11 equals 165, not 166"

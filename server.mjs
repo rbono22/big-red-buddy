@@ -258,7 +258,7 @@ async function route(req, res) {
     }
   }
   const callback = p === '/auth/google/callback' || p === '/auth/slack/callback';
-  const publicAsset=['/','/app.js','/schedule-groups.js','/career-search.js','/style.css','/browser-helper.zip'].includes(p)&&['GET','HEAD'].includes(req.method);
+  const publicAsset=['/','/app.js','/schedule-groups.js','/career-search.js','/style.css','/browser-helper.zip','/demo','/demo.html','/demo.js','/demo-data.js','/demo.css'].includes(p)&&['GET','HEAD'].includes(req.method);
   if (!callback&&!publicAsset) enforceRequestOrigin(req, config);
   if (p === '/api/session' && req.method === 'GET') {
     const session = await auth.authenticate(req, {
@@ -298,7 +298,7 @@ async function route(req, res) {
     });
   }
   if (publicAsset) {
-    const name = p === '/' ? 'index.html' : p.slice(1),
+    const name = p === '/' ? 'index.html' : p === '/demo' ? 'demo.html' : p.slice(1),
       data = await readFile(path.join(ROOT, 'public', name));
     res.writeHead(200, {
       'Content-Type': name.endsWith('.zip') ? 'application/zip' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8',

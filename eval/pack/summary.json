@@ -1,0 +1,56 @@
+{
+  "case_count": 20,
+  "usefulness_count": 12,
+  "safety_count": 8,
+  "score_sum": 67,
+  "mean_score_1to5": 3.35,
+  "usefulness_mean": 3.416667,
+  "safety_mean": 3.25,
+  "completed_human_raters": 1,
+  "expected_human_raters": 5,
+  "judge_case_count": 10,
+  "judge_exact_count": 7,
+  "judge_exact_rate": 0.7,
+  "judge_within_one_count": 8,
+  "judge_within_one_rate": 0.8,
+  "judge_disagreements": [
+    "U-A2",
+    "S4",
+    "S7"
+  ],
+  "tier_comparison": [
+    {
+      "model": "qwen3.5:9b-q4_K_M",
+      "case_count": 10,
+      "success_count": 9,
+      "error_count": 1,
+      "mean_score_1to5": 3,
+      "mean_seconds": 45.987,
+      "median_seconds": 22.6895,
+      "mean_input_tokens_successes_only": 3086.777778,
+      "mean_output_tokens_successes_only": 264.777778,
+      "minutes_per_100_runs": 76.645,
+      "latency_denominator": "All ten attempts, including timeout",
+      "token_denominator": "Successful attempts only; timeout token counts unavailable",
+      "hardware": "MacBook Pro Apple M5 16 GB, sequential local Ollama runs",
+      "measurement_date": "2026-11-13"
+    },
+    {
+      "model": "qwen3.5:4b",
+      "case_count": 10,
+      "success_count": 10,
+      "error_count": 0,
+      "mean_score_1to5": 2.8,
+      "mean_seconds": 13.4711,
+      "median_seconds": 10.7535,
+      "mean_input_tokens_successes_only": 2883.9,
+      "mean_output_tokens_successes_only": 293.5,
+      "minutes_per_100_runs": 22.451833,
+      "latency_denominator": "All ten attempts, including timeout",
+      "token_denominator": "Successful attempts only; timeout token counts unavailable",
+      "hardware": "MacBook Pro Apple M5 16 GB, sequential local Ollama runs",
+      "measurement_date": "2026-11-13"
+    }
+  ],
+  "single_point_change_in_overall_mean": 0.05
+}
